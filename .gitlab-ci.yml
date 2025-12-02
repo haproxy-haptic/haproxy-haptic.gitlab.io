@@ -1,0 +1,43 @@
+variables:
+  MAIN_REPO: "https://gitlab.com/haproxy-template-ic/haproxy-template-ingress-controller.git"
+
+pages:
+  stage: deploy
+  image: python:3.12-slim
+  tags:
+    - saas-linux-small-amd64
+  before_script:
+    - pip install --no-cache-dir mkdocs-material
+  script:
+    - |
+      # Clone the main repository (public, no auth needed)
+      apt-get update && apt-get install -y --no-install-recommends git
+      git clone --depth 1 ${MAIN_REPO} main-repo
+    - |
+      # Copy shared CSS
+      cp main-repo/docs/shared/colors.css main-repo/docs/controller/docs/stylesheets/
+      cp main-repo/docs/shared/colors.css main-repo/charts/haproxy-template-ic/docs/stylesheets/
+    - |
+      # Build controller docs
+      cd main-repo/docs/controller
+      mkdocs build -d ../../public/controller/latest
+      cd ../..
+    - |
+      # Build helm chart docs
+      cd main-repo/charts/haproxy-template-ic
+      mkdocs build -d ../../public/helm-chart/latest
+      cd ../..
+    - |
+      # Copy landing page and shared assets
+      mkdir -p main-repo/public/shared
+      cp main-repo/docs/landing-page/index.html main-repo/public/index.html
+      cp main-repo/docs/shared/colors.css main-repo/public/shared/colors.css
+    - |
+      # Move built docs to project root for GitLab Pages
+      mv main-repo/public .
+  artifacts:
+    paths:
+      - public
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == "pipeline"  # Triggered from main project
