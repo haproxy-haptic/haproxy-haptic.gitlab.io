@@ -7,7 +7,7 @@ pages:
   tags:
     - saas-linux-small-amd64
   before_script:
-    - pip install --no-cache-dir mkdocs-material
+    - pip install --no-cache-dir mkdocs-material mike
   script:
     - |
       # Clone the main repository (public, no auth needed)
