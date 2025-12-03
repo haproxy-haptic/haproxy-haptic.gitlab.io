@@ -8,10 +8,12 @@ pages:
     - saas-linux-small-amd64
   before_script:
     - pip install --no-cache-dir mkdocs-material mike
+    - apt-get update && apt-get install -y --no-install-recommends git
+    - git config --global user.email "ci@gitlab.com"
+    - git config --global user.name "GitLab CI"
   script:
     - |
       # Clone the main repository (public, no auth needed)
-      apt-get update && apt-get install -y --no-install-recommends git
       git clone --depth 1 ${MAIN_REPO} main-repo
     - |
       # Copy shared CSS to all doc sites
@@ -19,27 +21,37 @@ pages:
       cp main-repo/docs/shared/colors.css main-repo/docs/landing/docs/stylesheets/
       cp main-repo/docs/shared/colors.css main-repo/charts/haproxy-template-ic/docs/stylesheets/
     - |
-      # Build landing page (outputs to public/ root)
-      cd main-repo/docs/landing
-      mkdocs build -d ../../public
-      cd ../..
+      # Initialize public directory with existing content from this repo
+      mkdir -p public
+      cd public
+      git init
+      git remote add origin ..
+      git fetch origin main --depth=1 || true
+      # Checkout existing content or create new branch
+      git checkout main 2>/dev/null || git checkout -b main
+      cd ..
     - |
-      # Build controller docs
+      # Deploy controller docs with mike (adds/updates dev version)
       cd main-repo/docs/controller
-      mkdocs build -d ../../public/controller/latest
-      cd ../..
+      mike deploy --update-aliases --deploy-prefix controller -b main -r ../../../public dev latest
+      cd ../../..
     - |
-      # Build helm chart docs
+      # Deploy helm-chart docs with mike
       cd main-repo/charts/haproxy-template-ic
-      mkdocs build -d ../../public/helm-chart/latest
-      cd ../..
+      mike deploy --update-aliases --deploy-prefix helm-chart -b main -r ../../../public dev latest
+      cd ../../..
     - |
-      # Copy shared assets for version loading
-      mkdir -p main-repo/public/shared
-      cp main-repo/docs/shared/colors.css main-repo/public/shared/colors.css
+      # Checkout deployed content from mike's branch
+      cd public && git checkout main && cd ..
     - |
-      # Move built docs to project root for GitLab Pages
-      mv main-repo/public .
+      # Build landing page on top (preserving mike's output)
+      cd main-repo/docs/landing
+      mkdocs build -d ../../../public --dirty
+      cd ../../..
+    - |
+      # Copy shared assets
+      mkdir -p public/shared
+      cp main-repo/docs/shared/colors.css public/shared/colors.css
   artifacts:
     paths:
       - public
