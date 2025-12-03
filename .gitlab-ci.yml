@@ -14,9 +14,15 @@ pages:
       apt-get update && apt-get install -y --no-install-recommends git
       git clone --depth 1 ${MAIN_REPO} main-repo
     - |
-      # Copy shared CSS
+      # Copy shared CSS to all doc sites
       cp main-repo/docs/shared/colors.css main-repo/docs/controller/docs/stylesheets/
+      cp main-repo/docs/shared/colors.css main-repo/docs/landing/docs/stylesheets/
       cp main-repo/docs/shared/colors.css main-repo/charts/haproxy-template-ic/docs/stylesheets/
+    - |
+      # Build landing page (outputs to public/ root)
+      cd main-repo/docs/landing
+      mkdocs build -d ../../public
+      cd ../..
     - |
       # Build controller docs
       cd main-repo/docs/controller
@@ -28,9 +34,8 @@ pages:
       mkdocs build -d ../../public/helm-chart/latest
       cd ../..
     - |
-      # Copy landing page and shared assets
+      # Copy shared assets for version loading
       mkdir -p main-repo/public/shared
-      cp main-repo/docs/landing-page/index.html main-repo/public/index.html
       cp main-repo/docs/shared/colors.css main-repo/public/shared/colors.css
     - |
       # Move built docs to project root for GitLab Pages
