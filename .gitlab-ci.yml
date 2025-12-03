@@ -41,8 +41,8 @@ pages:
       mike deploy --update-aliases --deploy-prefix helm-chart -b main -r ../../../public dev latest
       cd ../../..
     - |
-      # Checkout deployed content from mike's branch
-      cd public && git checkout main && cd ..
+      # Get deployed content from mike's commits into working directory
+      cd public && git reset --hard HEAD && cd ..
     - |
       # Build landing page on top (preserving mike's output)
       cd main-repo/docs/landing
