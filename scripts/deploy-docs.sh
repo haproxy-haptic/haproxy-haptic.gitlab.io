@@ -150,7 +150,7 @@ echo ""
 echo "Copying shared CSS..."
 cp "${MAIN_REPO}/docs/shared/colors.css" "${MAIN_REPO}/docs/controller/docs/stylesheets/"
 cp "${MAIN_REPO}/docs/shared/colors.css" "${MAIN_REPO}/docs/landing/docs/stylesheets/"
-cp "${MAIN_REPO}/docs/shared/colors.css" "${MAIN_REPO}/charts/haproxy-template-ic/docs/stylesheets/"
+cp "${MAIN_REPO}/docs/shared/colors.css" "${MAIN_REPO}/charts/haptic/docs/stylesheets/"
 
 # Build landing page (not versioned)
 echo "Building landing page..."
@@ -160,7 +160,7 @@ cd - > /dev/null
 
 # Deploy versioned doc sites
 deploy_doc_site "controller" "${MAIN_REPO}/docs/controller"
-deploy_doc_site "helm-chart" "${MAIN_REPO}/charts/haproxy-template-ic"
+deploy_doc_site "helm-chart" "${MAIN_REPO}/charts/haptic"
 
 # Copy shared assets
 mkdir -p "${PUBLIC_DIR}/shared"
