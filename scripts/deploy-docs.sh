@@ -6,8 +6,14 @@ set -e
 # Usage: ./scripts/deploy-docs.sh <version> <main-repo-path> <public-dir>
 # Example: ./scripts/deploy-docs.sh dev ./main-repo ./public
 # Example: ./scripts/deploy-docs.sh v1.0.0 ./main-repo ./public
+# Example: ./scripts/deploy-docs.sh v1.0.0-alpha.1 ./main-repo ./public
+#
+# Version handling:
+#   - "dev": Gets "latest" alias (development builds)
+#   - "v1.0.0": Final release, gets "latest" alias, removes matching prereleases
+#   - "v1.0.0-alpha.1": Prerelease, NO "latest" alias, kept until final release
 
-VERSION="${1:?Version required (e.g., dev, v1.0.0)}"
+VERSION="${1:?Version required (e.g., dev, v1.0.0, v1.0.0-alpha.1)}"
 MAIN_REPO="${2:?Main repo path required}"
 PUBLIC_DIR="${3:?Public directory required}"
 
@@ -15,12 +21,37 @@ PUBLIC_DIR="${3:?Public directory required}"
 MAIN_REPO="$(cd "$MAIN_REPO" && pwd)"
 PUBLIC_DIR="$(mkdir -p "$PUBLIC_DIR" && cd "$PUBLIC_DIR" && pwd)"
 
+# Check if version is a prerelease (contains -alpha, -beta, or -rc)
+is_prerelease() {
+  [[ "$1" =~ -(alpha|beta|rc)\. ]]
+}
+
+# Extract base version from prerelease (v1.0.0-alpha.1 -> v1.0.0)
+get_base_version() {
+  echo "$1" | sed 's/-\(alpha\|beta\|rc\)\..*//'
+}
+
 # Determine if this version should be "latest"
-# Tagged versions (v*) and dev get the latest alias
-if [[ "$VERSION" == "dev" ]] || [[ "$VERSION" =~ ^v[0-9] ]]; then
+# - "dev" gets latest alias
+# - Final releases (v1.0.0) get latest alias
+# - Prereleases (v1.0.0-alpha.1) do NOT get latest alias
+if [[ "$VERSION" == "dev" ]]; then
   IS_LATEST=true
+  IS_PRERELEASE=false
+  IS_FINAL_RELEASE=false
+elif is_prerelease "$VERSION"; then
+  IS_LATEST=false
+  IS_PRERELEASE=true
+  IS_FINAL_RELEASE=false
+elif [[ "$VERSION" =~ ^v[0-9] ]]; then
+  IS_LATEST=true
+  IS_PRERELEASE=false
+  IS_FINAL_RELEASE=true
+  BASE_VERSION="$VERSION"
 else
   IS_LATEST=false
+  IS_PRERELEASE=false
+  IS_FINAL_RELEASE=false
 fi
 
 # Function to update versions.json
@@ -31,15 +62,25 @@ update_versions_json() {
   mkdir -p "${PUBLIC_DIR}/${prefix}"
 
   if [ -f "$versions_file" ]; then
-    # Remove latest alias from all existing versions, add new version at beginning
-    if [ "$IS_LATEST" = true ]; then
+    local tmp_file="/tmp/versions_update.json"
+
+    if [ "$IS_FINAL_RELEASE" = true ]; then
+      # Final release: remove matching prereleases (v1.0.0-alpha.*, v1.0.0-beta.*, v1.0.0-rc.*)
+      # Also remove latest alias from other versions and add this as latest
+      echo "Cleaning up prereleases matching ${BASE_VERSION}..."
+      jq --arg v "$VERSION" --arg base "$BASE_VERSION" \
+        '[{"version":$v,"title":$v,"aliases":["latest"]}] + [.[] | select(.version != $v and (.version | startswith($base + "-") | not)) | .aliases = []]' \
+        "$versions_file" > "$tmp_file" && mv "$tmp_file" "$versions_file"
+    elif [ "$IS_LATEST" = true ]; then
+      # Dev or other latest: remove latest alias from others, add to this version
       jq --arg v "$VERSION" \
         '[{"version":$v,"title":$v,"aliases":["latest"]}] + [.[] | select(.version != $v) | .aliases = []]' \
-        "$versions_file" > /tmp/versions.json && mv /tmp/versions.json "$versions_file"
+        "$versions_file" > "$tmp_file" && mv "$tmp_file" "$versions_file"
     else
+      # Prerelease or other: just add without latest alias
       jq --arg v "$VERSION" \
         '[{"version":$v,"title":$v,"aliases":[]}] + [.[] | select(.version != $v)]' \
-        "$versions_file" > /tmp/versions.json && mv /tmp/versions.json "$versions_file"
+        "$versions_file" > "$tmp_file" && mv "$tmp_file" "$versions_file"
     fi
   else
     # Create new versions.json
@@ -48,6 +89,23 @@ update_versions_json() {
     else
       echo "[{\"version\":\"${VERSION}\",\"title\":\"${VERSION}\",\"aliases\":[]}]" > "$versions_file"
     fi
+  fi
+}
+
+# Function to clean up prerelease directories when final release ships
+cleanup_prerelease_dirs() {
+  local prefix=$1
+  local base_version=$2
+  local site_dir="${PUBLIC_DIR}/${prefix}"
+
+  if [ -d "$site_dir" ]; then
+    echo "Cleaning up prerelease directories for ${base_version}..."
+    for prerelease_dir in "${site_dir}/${base_version}"-{alpha,beta,rc}.*; do
+      if [ -d "$prerelease_dir" ]; then
+        echo "  Removing: $(basename "$prerelease_dir")"
+        rm -rf "$prerelease_dir"
+      fi
+    done
   fi
 }
 
@@ -70,6 +128,11 @@ deploy_doc_site() {
     cd - > /dev/null
   fi
 
+  # Clean up prerelease directories if this is a final release
+  if [ "$IS_FINAL_RELEASE" = true ]; then
+    cleanup_prerelease_dirs "$name" "$BASE_VERSION"
+  fi
+
   # Update versions.json
   update_versions_json "$name"
 }
@@ -79,6 +142,8 @@ echo "Version: ${VERSION}"
 echo "Main repo: ${MAIN_REPO}"
 echo "Public dir: ${PUBLIC_DIR}"
 echo "Is latest: ${IS_LATEST}"
+echo "Is prerelease: ${IS_PRERELEASE}"
+echo "Is final release: ${IS_FINAL_RELEASE}"
 echo ""
 
 # Copy shared CSS to all doc sites

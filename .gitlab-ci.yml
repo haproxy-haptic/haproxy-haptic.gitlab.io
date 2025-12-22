@@ -10,9 +10,12 @@ pages:
     - pip install --no-cache-dir mkdocs-material
     - apt-get update && apt-get install -y --no-install-recommends git jq
   script:
+    # Use DOC_VERSION from trigger, default to "dev" for regular builds
+    - VERSION="${DOC_VERSION:-dev}"
+    - echo "Building docs version ${VERSION}"
     - git clone --depth 1 ${MAIN_REPO} main-repo
     - mkdir -p public
-    - ./scripts/deploy-docs.sh dev ./main-repo ./public
+    - ./scripts/deploy-docs.sh "${VERSION}" ./main-repo ./public
   artifacts:
     paths:
       - public
