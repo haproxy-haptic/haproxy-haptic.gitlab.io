@@ -168,9 +168,14 @@ cp "${MAIN_REPO}/docs/shared/colors.css" "${MAIN_REPO}/docs/landing/docs/stylesh
 cp "${MAIN_REPO}/docs/shared/colors.css" "${MAIN_REPO}/charts/haptic/docs/stylesheets/"
 
 # Build landing page (not versioned)
+# Use temp directory to avoid mkdocs cleaning existing version directories
 echo "Building landing page..."
 cd "${MAIN_REPO}/docs/landing"
-mkdocs build -d "${PUBLIC_DIR}"
+LANDING_TEMP=$(mktemp -d)
+mkdocs build -d "${LANDING_TEMP}"
+# Copy landing files to public dir without removing existing version directories
+cp -a "${LANDING_TEMP}"/* "${PUBLIC_DIR}/"
+rm -rf "${LANDING_TEMP}"
 cd - > /dev/null
 
 # Deploy versioned doc sites
