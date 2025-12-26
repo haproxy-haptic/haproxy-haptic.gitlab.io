@@ -1,5 +1,5 @@
 variables:
-  MAIN_REPO: "https://gitlab.com/haproxy-template-ic/haproxy-template-ingress-controller.git"
+  MAIN_REPO: "https://gitlab.com/haproxy-haptic/haptic.git"
 
 pages:
   stage: deploy
@@ -8,7 +8,7 @@ pages:
     - saas-linux-small-amd64
   before_script:
     - pip install --no-cache-dir mkdocs-material
-    - apt-get update && apt-get install -y --no-install-recommends git jq curl
+    - apt-get update && apt-get install -y --no-install-recommends git jq curl unzip
   script:
     # Use DOC_VERSION from trigger, default to "dev" for regular builds
     - VERSION="${DOC_VERSION:-dev}"
@@ -28,6 +28,20 @@ pages:
         fi
       done
       export VERSIONS_BACKUP_DIR="/tmp/versions-backup"
+
+    # Download existing pages artifact to preserve all version directories
+    - |
+      echo "Downloading existing pages artifact..."
+      if curl -sSf --location --output pages-artifact.zip \
+          "https://gitlab.com/api/v4/projects/${CI_PROJECT_ID}/jobs/artifacts/main/download?job=pages" 2>/dev/null; then
+        unzip -q -o pages-artifact.zip
+        rm pages-artifact.zip
+        echo "Restored existing site content:"
+        ls -la public/ || true
+      else
+        echo "No existing artifact found, starting fresh"
+        mkdir -p public
+      fi
 
     - git clone --depth 1 ${MAIN_REPO} main-repo
     - ./scripts/deploy-docs.sh "${VERSION}" ./main-repo ./public
