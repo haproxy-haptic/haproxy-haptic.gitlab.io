@@ -8,13 +8,27 @@ pages:
     - saas-linux-small-amd64
   before_script:
     - pip install --no-cache-dir mkdocs-material
-    - apt-get update && apt-get install -y --no-install-recommends git jq
+    - apt-get update && apt-get install -y --no-install-recommends git jq curl
   script:
     # Use DOC_VERSION from trigger, default to "dev" for regular builds
     - VERSION="${DOC_VERSION:-dev}"
     - echo "Building docs version ${VERSION}"
+
+    # Download existing published content to preserve versions.json across builds
+    - |
+      echo "Downloading existing pages content..."
+      for prefix in controller helm-chart; do
+        mkdir -p "public/${prefix}"
+        if curl -sSf "https://haproxy-haptic.org/${prefix}/versions.json" -o "public/${prefix}/versions.json" 2>/dev/null; then
+          echo "  Downloaded ${prefix}/versions.json:"
+          cat "public/${prefix}/versions.json"
+          echo ""
+        else
+          echo "  No existing ${prefix}/versions.json found"
+        fi
+      done
+
     - git clone --depth 1 ${MAIN_REPO} main-repo
-    - mkdir -p public
     - ./scripts/deploy-docs.sh "${VERSION}" ./main-repo ./public
   artifacts:
     paths:

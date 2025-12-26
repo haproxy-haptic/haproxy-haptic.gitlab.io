@@ -90,6 +90,14 @@ update_versions_json() {
       echo "[{\"version\":\"${VERSION}\",\"title\":\"${VERSION}\",\"aliases\":[]}]" > "$versions_file"
     fi
   fi
+
+  # Ensure dev is always in versions.json if dev directory exists
+  local dev_dir="${PUBLIC_DIR}/${prefix}/dev"
+  if [ -d "$dev_dir" ] && ! jq -e '.[] | select(.version == "dev")' "$versions_file" > /dev/null 2>&1; then
+    echo "Adding missing 'dev' entry to versions.json..."
+    local tmp_file="/tmp/versions_dev_fix.json"
+    jq '. + [{"version":"dev","title":"dev","aliases":[]}]' "$versions_file" > "$tmp_file" && mv "$tmp_file" "$versions_file"
+  fi
 }
 
 # Function to clean up prerelease directories when final release ships
