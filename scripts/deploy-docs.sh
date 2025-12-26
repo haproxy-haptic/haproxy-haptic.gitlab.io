@@ -61,6 +61,13 @@ update_versions_json() {
 
   mkdir -p "${PUBLIC_DIR}/${prefix}"
 
+  # Restore backup if exists (mkdocs cleans public dir during build)
+  local backup_file="${VERSIONS_BACKUP_DIR:-/tmp/versions-backup}/${prefix}-versions.json"
+  if [ ! -f "$versions_file" ] && [ -f "$backup_file" ]; then
+    echo "Restoring ${prefix}/versions.json from backup..."
+    cp "$backup_file" "$versions_file"
+  fi
+
   if [ -f "$versions_file" ]; then
     local tmp_file="/tmp/versions_update.json"
 

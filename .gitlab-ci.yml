@@ -14,19 +14,20 @@ pages:
     - VERSION="${DOC_VERSION:-dev}"
     - echo "Building docs version ${VERSION}"
 
-    # Download existing published content to preserve versions.json across builds
+    # Download existing versions.json to temp location (mkdocs cleans public dir during build)
     - |
-      echo "Downloading existing pages content..."
+      echo "Downloading existing versions.json files..."
+      mkdir -p /tmp/versions-backup
       for prefix in controller helm-chart; do
-        mkdir -p "public/${prefix}"
-        if curl -sSf "https://haproxy-haptic.org/${prefix}/versions.json" -o "public/${prefix}/versions.json" 2>/dev/null; then
+        if curl -sSf "https://haproxy-haptic.org/${prefix}/versions.json" -o "/tmp/versions-backup/${prefix}-versions.json" 2>/dev/null; then
           echo "  Downloaded ${prefix}/versions.json:"
-          cat "public/${prefix}/versions.json"
+          cat "/tmp/versions-backup/${prefix}-versions.json"
           echo ""
         else
           echo "  No existing ${prefix}/versions.json found"
         fi
       done
+      export VERSIONS_BACKUP_DIR="/tmp/versions-backup"
 
     - git clone --depth 1 ${MAIN_REPO} main-repo
     - ./scripts/deploy-docs.sh "${VERSION}" ./main-repo ./public
