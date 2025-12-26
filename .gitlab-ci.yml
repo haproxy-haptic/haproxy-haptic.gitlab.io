@@ -43,7 +43,15 @@ pages:
         mkdir -p public
       fi
 
-    - git clone --depth 1 ${MAIN_REPO} main-repo
+    # Clone at specific version for releases, main branch for dev
+    - |
+      if [ "$VERSION" = "dev" ]; then
+        echo "Cloning main branch for dev docs..."
+        git clone --depth 1 ${MAIN_REPO} main-repo
+      else
+        echo "Cloning tag ${VERSION} for release docs..."
+        git clone --depth 1 --branch "${VERSION}" ${MAIN_REPO} main-repo
+      fi
     - ./scripts/deploy-docs.sh "${VERSION}" ./main-repo ./public
   artifacts:
     paths:
