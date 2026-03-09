@@ -7,7 +7,9 @@ pages:
   tags:
     - saas-linux-small-amd64
   before_script:
-    - pip install --no-cache-dir mkdocs-material
+    # Pin mkdocs<2 to avoid incompatibility with mkdocs-material
+    # (see https://squidfunk.github.io/mkdocs-material/blog/2026/02/18/mkdocs-2.0/)
+    - pip install --no-cache-dir "mkdocs>=1.6,<2" mkdocs-material
     - apt-get update && apt-get install -y --no-install-recommends git jq curl unzip
   script:
     # Use DOC_VERSION from trigger, default to "dev" for regular builds
