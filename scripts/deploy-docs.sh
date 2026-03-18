@@ -8,14 +8,17 @@ set -e
 # Example: ./scripts/deploy-docs.sh v1.0.0 ./main-repo ./public
 # Example: ./scripts/deploy-docs.sh v1.0.0-alpha.1 ./main-repo ./public
 #
-# Version handling:
-#   - "dev": Gets "latest" alias (development builds)
-#   - "v1.0.0": Final release, gets "latest" alias, removes matching prereleases
+# Version handling (leading "v" is stripped automatically):
+#   - "dev": No "latest" alias (JS fallback picks it when no release exists)
+#   - "v1.0.0" / "1.0.0": Final release, gets "latest" alias, removes matching prereleases
 #   - "v1.0.0-alpha.1": Prerelease, NO "latest" alias, kept until final release
 
 VERSION="${1:?Version required (e.g., dev, v1.0.0, v1.0.0-alpha.1)}"
 MAIN_REPO="${2:?Main repo path required}"
 PUBLIC_DIR="${3:?Public directory required}"
+
+# Normalize: strip leading "v" (CI passes v0.1.0, helm expects 0.1.0)
+VERSION="${VERSION#v}"
 
 # Convert to absolute paths
 MAIN_REPO="$(cd "$MAIN_REPO" && pwd)"
@@ -26,24 +29,24 @@ is_prerelease() {
   [[ "$1" =~ -(alpha|beta|rc)\. ]]
 }
 
-# Extract base version from prerelease (v1.0.0-alpha.1 -> v1.0.0)
+# Extract base version from prerelease (1.0.0-alpha.1 -> 1.0.0)
 get_base_version() {
   echo "$1" | sed 's/-\(alpha\|beta\|rc\)\..*//'
 }
 
 # Determine if this version should be "latest"
-# - "dev" gets latest alias
-# - Final releases (v1.0.0) get latest alias
-# - Prereleases (v1.0.0-alpha.1) do NOT get latest alias
+# - "dev" does NOT get latest alias (JS fallback picks versions[0])
+# - Final releases (1.0.0) get latest alias
+# - Prereleases (1.0.0-alpha.1) do NOT get latest alias
 if [[ "$VERSION" == "dev" ]]; then
-  IS_LATEST=true
+  IS_LATEST=false
   IS_PRERELEASE=false
   IS_FINAL_RELEASE=false
 elif is_prerelease "$VERSION"; then
   IS_LATEST=false
   IS_PRERELEASE=true
   IS_FINAL_RELEASE=false
-elif [[ "$VERSION" =~ ^v[0-9] ]]; then
+elif [[ "$VERSION" =~ ^[0-9] ]]; then
   IS_LATEST=true
   IS_PRERELEASE=false
   IS_FINAL_RELEASE=true
