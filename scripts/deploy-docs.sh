@@ -79,7 +79,7 @@ update_versions_json() {
       # Also remove latest alias from other versions and add this as latest
       echo "Cleaning up prereleases matching ${BASE_VERSION}..."
       jq --arg v "$VERSION" --arg base "$BASE_VERSION" \
-        '[{"version":$v,"title":$v,"aliases":["latest"]}] + [.[] | select(.version != $v and (.version | startswith($base + "-") | not)) | .aliases = []]' \
+        '[{"version":$v,"title":$v,"aliases":["latest"]}] + [.[] | select(.version != $v and .version != ("v" + $v) and (.version | startswith($base + "-") | not)) | .aliases = []]' \
         "$versions_file" > "$tmp_file" && mv "$tmp_file" "$versions_file"
     elif [ "$IS_LATEST" = true ]; then
       # Dev or other latest: remove latest alias from others, add to this version
