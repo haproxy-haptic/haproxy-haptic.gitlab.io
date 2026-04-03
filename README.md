@@ -1,4 +1,4 @@
-# haproxy-template-ic.gitlab.io
+# haproxy-haptic.gitlab.io
 
 GitLab Pages for HAProxy Template Ingress Controller documentation
 
@@ -15,14 +15,14 @@ Already a pro? Just edit this README.md and make it your own. Want to make it ea
 
 ```
 cd existing_repo
-git remote add origin https://gitlab.com/haproxy-template-ic/haproxy-template-ic.gitlab.io.git
+git remote add origin https://gitlab.com/haproxy-haptic/haproxy-haptic.gitlab.io.git
 git branch -M main
 git push -uf origin main
 ```
 
 ## Integrate with your tools
 
-* [Set up project integrations](https://gitlab.com/haproxy-template-ic/haproxy-template-ic.gitlab.io/-/settings/integrations)
+* [Set up project integrations](https://gitlab.com/haproxy-haptic/haproxy-haptic.gitlab.io/-/settings/integrations)
 
 ## Collaborate with your team
 
