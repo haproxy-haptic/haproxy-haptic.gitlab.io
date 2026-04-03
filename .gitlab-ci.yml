@@ -7,7 +7,9 @@ pages:
   tags:
     - saas-linux-small-amd64
   before_script:
-    - pip install --no-cache-dir mkdocs-material
+    # Pin mkdocs<2 to avoid incompatibility with mkdocs-material
+    # (see https://squidfunk.github.io/mkdocs-material/blog/2026/02/18/mkdocs-2.0/)
+    - pip install --no-cache-dir "mkdocs>=1.6,<2" mkdocs-material
     - apt-get update && apt-get install -y --no-install-recommends git jq curl unzip
   script:
     # Use DOC_VERSION from trigger, default to "dev" for regular builds
@@ -59,3 +61,14 @@ pages:
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
     - if: $CI_PIPELINE_SOURCE == "pipeline"  # Triggered from main project
+
+test:
+  stage: test
+  image: python:3.14-slim
+  tags:
+    - saas-linux-small-amd64
+  script:
+    - pip install --no-cache-dir "mkdocs>=1.6,<2" mkdocs-material
+    - mkdocs --version
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
