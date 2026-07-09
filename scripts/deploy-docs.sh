@@ -189,6 +189,11 @@ update_playground_versions() {
 HTML
 }
 
+# GitLab API GET / artifact download with the CI job token, falling back to an
+# anonymous request (haptic is a public project).
+gl_get() { curl -sSf --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "$1" 2>/dev/null || curl -sSf "$1" 2>/dev/null; }
+gl_dl()  { curl -sSf --location --output "$2" --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "$1" 2>/dev/null || curl -sSf --location --output "$2" "$1" 2>/dev/null; }
+
 # Fetch the browser-playground bundle from the haptic build-playground-wasm job
 # artifact and publish it under public/playground/<version>/, then refresh
 # versions.json. CI-only (needs CI_JOB_TOKEN); skipped locally, where the bundle is
@@ -202,13 +207,26 @@ deploy_playground() {
   local ref="main"
   [ "$VERSION" = "dev" ] || ref="v${VERSION}"
   local project="haproxy-haptic%2Fhaptic"
-  local url="https://gitlab.com/api/v4/projects/${project}/jobs/artifacts/${ref}/download?job=build-playground-wasm"
+  local api="https://gitlab.com/api/v4/projects/${project}"
 
-  echo "Fetching playground bundle (ref=${ref})..."
-  # Prefer the CI job token (works when this project is on haptic's job-token
-  # allowlist); fall back to an anonymous fetch since haptic is a public project.
-  if ! curl -sSf --location --output /tmp/pg.zip --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "$url" \
-     && ! curl -sSf --location --output /tmp/pg.zip "$url"; then
+  # Resolve the build-playground-wasm artifact for the LATEST pipeline on $ref by
+  # its specific job id. A job's artifact downloads as soon as that job succeeds —
+  # unlike jobs/artifacts/<ref>/download, which resolves to the latest *fully
+  # successful pipeline* and returns a stale bundle while this commit's pipeline is
+  # still running its other (e.g. e2e) jobs. haptic's trigger-pages waits for
+  # build-playground-wasm, so the job is finished on the newest pipeline by now.
+  echo "Resolving playground bundle (ref=${ref})..."
+  local pid jobid url
+  pid="$(gl_get "${api}/pipelines?ref=${ref}&per_page=1" | jq -r '.[0].id // empty')"
+  [ -n "$pid" ] && jobid="$(gl_get "${api}/pipelines/${pid}/jobs?per_page=100" | jq -r '[.[] | select(.name=="build-playground-wasm" and .status=="success")][0].id // empty')"
+  if [ -n "${jobid:-}" ]; then
+    url="${api}/jobs/${jobid}/artifacts"
+    echo "  pipeline ${pid} -> build-playground-wasm job ${jobid}"
+  else
+    url="${api}/jobs/artifacts/${ref}/download?job=build-playground-wasm"
+    echo "  no ready job on the latest pipeline; falling back to latest-successful-pipeline artifact"
+  fi
+  if ! gl_dl "$url" /tmp/pg.zip; then
     echo "WARNING: no playground artifact for ref ${ref}; leaving existing /playground/ untouched" >&2
     return 0
   fi
