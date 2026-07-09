@@ -179,10 +179,14 @@ update_playground_versions() {
   echo "playground/versions.json:"; cat "$vfile"
 
   # Landing redirect so bare /playground/ resolves to the current (or dev) shell.
+  # The JS redirect carries the query string and fragment through, so deep-links
+  # like /playground/?preset=ingress and /playground/#s=<share> keep working; the
+  # meta-refresh + link is a no-JS fallback (target shell only).
   local landing="${current:-dev}"
   cat > "${PUBLIC_DIR}/playground/index.html" <<HTML
 <!doctype html><html lang="en"><head><meta charset="utf-8">
 <title>HAPTIC Playground</title>
+<script>location.replace('./${landing}/' + location.search + location.hash)</script>
 <meta http-equiv="refresh" content="0; url=./${landing}/">
 <link rel="canonical" href="./${landing}/"></head>
 <body><p><a href="./${landing}/">HAPTIC Playground &rarr;</a></p></body></html>
@@ -216,15 +220,26 @@ deploy_playground() {
   # still running its other (e.g. e2e) jobs. haptic's trigger-pages waits for
   # build-playground-wasm, so the job is finished on the newest pipeline by now.
   echo "Resolving playground bundle (ref=${ref})..."
-  local pid jobid url
-  pid="$(gl_get "${api}/pipelines?ref=${ref}&per_page=1" | jq -r '.[0].id // empty')"
-  [ -n "$pid" ] && jobid="$(gl_get "${api}/pipelines/${pid}/jobs?per_page=100" | jq -r '[.[] | select(.name=="build-playground-wasm" and .status=="success")][0].id // empty')"
+  # Fetch the build-playground-wasm artifact for the SAME commit the docs were
+  # just built from (the cloned main-repo HEAD), so the published docs and
+  # playground never drift. Pinning by sha (not "latest pipeline") avoids the race
+  # where this deploy is triggered before that commit's build-playground-wasm has
+  # finished and would otherwise grab a stale bundle; wait briefly if it hasn't.
+  local sha pid jobid url tries=0
+  sha="$(git -C "${MAIN_REPO}" rev-parse HEAD 2>/dev/null || true)"
+  while [ -n "$sha" ]; do
+    pid="$(gl_get "${api}/pipelines?ref=${ref}&sha=${sha}&per_page=1" | jq -r '.[0].id // empty')"
+    [ -n "$pid" ] && jobid="$(gl_get "${api}/pipelines/${pid}/jobs?per_page=100" | jq -r '[.[] | select(.name=="build-playground-wasm" and .status=="success")][0].id // empty')"
+    [ -n "${jobid:-}" ] && break
+    tries=$((tries + 1)); [ "$tries" -ge 12 ] && break   # ~4 min ceiling, then fall back
+    echo "  waiting for build-playground-wasm on ${sha:0:8} (try ${tries}/12)..."; sleep 20
+  done
   if [ -n "${jobid:-}" ]; then
     url="${api}/jobs/${jobid}/artifacts"
-    echo "  pipeline ${pid} -> build-playground-wasm job ${jobid}"
+    echo "  pipeline ${pid} (${sha:0:8}) -> build-playground-wasm job ${jobid}"
   else
     url="${api}/jobs/artifacts/${ref}/download?job=build-playground-wasm"
-    echo "  no ready job on the latest pipeline; falling back to latest-successful-pipeline artifact"
+    echo "  no build-playground-wasm for ${sha:-$ref}; falling back to latest-successful-pipeline artifact" >&2
   fi
   if ! gl_dl "$url" /tmp/pg.zip; then
     echo "WARNING: no playground artifact for ref ${ref}; leaving existing /playground/ untouched" >&2
