@@ -155,6 +155,69 @@ deploy_doc_site() {
   update_versions_json "$name"
 }
 
+# Refresh the shared public/playground/versions.json (object schema the shell's
+# initVersions consumes: { current, versions: [{version, stable}] }). Upserts this
+# VERSION and sets `current` to the newest non-dev release (prereleases included).
+update_playground_versions() {
+  local vfile="${PUBLIC_DIR}/playground/versions.json"
+  mkdir -p "$(dirname "$vfile")"
+  local stable=true
+  if [ "$VERSION" = "dev" ] || is_prerelease "$VERSION"; then stable=false; fi
+  [ -f "$vfile" ] || echo '{"versions":[]}' > "$vfile"
+
+  local tmp="/tmp/pg-versions.json"
+  jq --arg v "$VERSION" --argjson stable "$stable" \
+    '.versions = ([{version:$v, stable:$stable}] + [.versions[] | select(.version != $v)])' \
+    "$vfile" > "$tmp" && mv "$tmp" "$vfile"
+
+  # current = newest non-dev version (dev is never `current`); omitted while only dev exists.
+  local current
+  current="$(jq -r '[.versions[] | select(.version != "dev") | .version] | .[0] // empty' "$vfile")"
+  if [ -n "$current" ]; then
+    jq --arg c "$current" '.current = $c' "$vfile" > "$tmp" && mv "$tmp" "$vfile"
+  fi
+  echo "playground/versions.json:"; cat "$vfile"
+}
+
+# Fetch the browser-playground bundle from the haptic build-playground-wasm job
+# artifact and publish it under public/playground/<version>/, then refresh
+# versions.json. CI-only (needs CI_JOB_TOKEN); skipped locally, where the bundle is
+# built directly via scripts/build-playground.sh.
+deploy_playground() {
+  if [ -z "${CI_JOB_TOKEN:-}" ]; then
+    echo "Skipping playground publish (no CI_JOB_TOKEN; build locally with scripts/build-playground.sh)"
+    return 0
+  fi
+  # dev pulls the latest main build; a release pulls its v-tag build.
+  local ref="main"
+  [ "$VERSION" = "dev" ] || ref="v${VERSION}"
+  local project="haproxy-haptic%2Fhaptic"
+  local url="https://gitlab.com/api/v4/projects/${project}/jobs/artifacts/${ref}/download?job=build-playground-wasm"
+
+  echo "Fetching playground bundle (ref=${ref})..."
+  # Prefer the CI job token (works when this project is on haptic's job-token
+  # allowlist); fall back to an anonymous fetch since haptic is a public project.
+  if ! curl -sSf --location --output /tmp/pg.zip --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "$url" \
+     && ! curl -sSf --location --output /tmp/pg.zip "$url"; then
+    echo "WARNING: no playground artifact for ref ${ref}; leaving existing /playground/ untouched" >&2
+    return 0
+  fi
+  rm -rf /tmp/pg-extract && mkdir -p /tmp/pg-extract
+  unzip -q -o /tmp/pg.zip -d /tmp/pg-extract
+  rm -f /tmp/pg.zip
+  if [ ! -d /tmp/pg-extract/public/playground ]; then
+    echo "WARNING: artifact had no public/playground/; skipping" >&2
+    return 0
+  fi
+  mkdir -p "${PUBLIC_DIR}/playground"
+  # Copies the <version>/ dir (raw + .br + .gz siblings) into the site.
+  cp -a /tmp/pg-extract/public/playground/. "${PUBLIC_DIR}/playground/"
+  rm -rf /tmp/pg-extract
+  update_playground_versions
+  echo "Published playground/${VERSION}:"
+  ls "${PUBLIC_DIR}/playground/${VERSION}" 2>/dev/null | head
+}
+
 echo "=== Deploying docs ==="
 echo "Version: ${VERSION}"
 echo "Main repo: ${MAIN_REPO}"
@@ -184,6 +247,11 @@ cd - > /dev/null
 # Deploy versioned doc sites
 deploy_doc_site "controller" "${MAIN_REPO}/docs/controller"
 deploy_doc_site "helm-chart" "${MAIN_REPO}/charts/haptic"
+
+# Publish the browser playground bundle (fetched from the haptic build artifact).
+# Non-fatal: a playground hiccup must never block the docs deploy (and also disables
+# set -e inside the function so a partial failure returns cleanly).
+deploy_playground || echo "WARNING: playground publish step failed (non-fatal); docs unaffected"
 
 # Copy shared assets
 mkdir -p "${PUBLIC_DIR}/shared"
