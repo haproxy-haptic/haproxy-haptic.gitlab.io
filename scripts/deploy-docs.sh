@@ -281,9 +281,13 @@ deploy_doc_site "helm-chart" "${MAIN_REPO}/charts/haptic"
 # set -e inside the function so a partial failure returns cleanly).
 deploy_playground || echo "WARNING: playground publish step failed (non-fatal); docs unaffected"
 
-# Copy shared assets
+# Copy shared assets (referenced by every site via absolute /shared/... URLs)
 mkdir -p "${PUBLIC_DIR}/shared"
 cp "${MAIN_REPO}/docs/shared/colors.css" "${PUBLIC_DIR}/shared/colors.css"
+# Interactive playground embed component (loaded by each site's mkdocs.yml)
+for f in playground-embed.css playground-embed.js; do
+  [ -f "${MAIN_REPO}/docs/shared/$f" ] && cp "${MAIN_REPO}/docs/shared/$f" "${PUBLIC_DIR}/shared/$f"
+done
 
 echo ""
 echo "=== Deployment complete ==="
