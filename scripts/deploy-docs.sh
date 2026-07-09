@@ -177,6 +177,16 @@ update_playground_versions() {
     jq --arg c "$current" '.current = $c' "$vfile" > "$tmp" && mv "$tmp" "$vfile"
   fi
   echo "playground/versions.json:"; cat "$vfile"
+
+  # Landing redirect so bare /playground/ resolves to the current (or dev) shell.
+  local landing="${current:-dev}"
+  cat > "${PUBLIC_DIR}/playground/index.html" <<HTML
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<title>HAPTIC Playground</title>
+<meta http-equiv="refresh" content="0; url=./${landing}/">
+<link rel="canonical" href="./${landing}/"></head>
+<body><p><a href="./${landing}/">HAPTIC Playground &rarr;</a></p></body></html>
+HTML
 }
 
 # Fetch the browser-playground bundle from the haptic build-playground-wasm job
