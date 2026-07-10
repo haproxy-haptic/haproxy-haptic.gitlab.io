@@ -322,13 +322,19 @@ fi
 # set -e inside the function so a partial failure returns cleanly).
 deploy_playground || echo "WARNING: playground publish step failed (non-fatal); docs unaffected"
 
-# Copy shared assets (referenced by every site via absolute /shared/... URLs)
+# Copy shared assets (referenced by every site via absolute /shared/... URLs).
+# Copy EVERYTHING in docs/shared/ — a hand-maintained whitelist here silently
+# dropped config-highlight.bundle.js (playground-embed.js dynamically imports it,
+# so its absence 404s at runtime with no build error and the docs fall back to
+# plain-YAML highlighting). Publishing the whole dir kills that drift class.
 mkdir -p "${PUBLIC_DIR}/shared"
-cp "${MAIN_REPO}/docs/shared/colors.css" "${PUBLIC_DIR}/shared/colors.css"
-# Interactive playground embed component (loaded by each site's mkdocs.yml)
-for f in playground-embed.css playground-embed.js; do
-  [ -f "${MAIN_REPO}/docs/shared/$f" ] && cp "${MAIN_REPO}/docs/shared/$f" "${PUBLIC_DIR}/shared/$f"
-done
+cp -a "${MAIN_REPO}/docs/shared/." "${PUBLIC_DIR}/shared/"
+# The embed highlighter is imported at runtime only — a missing file is invisible
+# to the build, so assert it made it into the site.
+if [ -f "${MAIN_REPO}/docs/shared/config-highlight.bundle.js" ] && [ ! -f "${PUBLIC_DIR}/shared/config-highlight.bundle.js" ]; then
+  echo "ERROR: config-highlight.bundle.js missing from ${PUBLIC_DIR}/shared" >&2
+  exit 1
+fi
 
 echo ""
 echo "=== Deployment complete ==="
