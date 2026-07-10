@@ -270,11 +270,21 @@ echo "Is prerelease: ${IS_PRERELEASE}"
 echo "Is final release: ${IS_FINAL_RELEASE}"
 echo ""
 
+# The controller + Helm chart docs merged into one /docs/ site (docs/site/).
+# Older release tags still carry the two-site layout (docs/controller/ +
+# charts/haptic/), so build whichever the checked-out main-repo actually has.
+MERGED_DOCS=false
+[ -d "${MAIN_REPO}/docs/site" ] && MERGED_DOCS=true
+
 # Copy shared CSS to all doc sites
 echo "Copying shared CSS..."
-cp "${MAIN_REPO}/docs/shared/colors.css" "${MAIN_REPO}/docs/controller/docs/stylesheets/"
 cp "${MAIN_REPO}/docs/shared/colors.css" "${MAIN_REPO}/docs/landing/docs/stylesheets/"
-cp "${MAIN_REPO}/docs/shared/colors.css" "${MAIN_REPO}/charts/haptic/docs/stylesheets/"
+if [ "$MERGED_DOCS" = true ]; then
+  cp "${MAIN_REPO}/docs/shared/colors.css" "${MAIN_REPO}/docs/site/docs/stylesheets/"
+else
+  cp "${MAIN_REPO}/docs/shared/colors.css" "${MAIN_REPO}/docs/controller/docs/stylesheets/"
+  cp "${MAIN_REPO}/docs/shared/colors.css" "${MAIN_REPO}/charts/haptic/docs/stylesheets/"
+fi
 
 # Build landing page (not versioned)
 # Use temp directory to avoid mkdocs cleaning existing version directories
@@ -287,9 +297,25 @@ cp -a "${LANDING_TEMP}"/* "${PUBLIC_DIR}/"
 rm -rf "${LANDING_TEMP}"
 cd - > /dev/null
 
-# Deploy versioned doc sites
-deploy_doc_site "controller" "${MAIN_REPO}/docs/controller"
-deploy_doc_site "helm-chart" "${MAIN_REPO}/charts/haptic"
+# Deploy versioned doc site(s)
+if [ "$MERGED_DOCS" = true ]; then
+  deploy_doc_site "docs" "${MAIN_REPO}/docs/site"
+  # Forward the old /controller/ and /helm-chart/ URLs to the merged /docs/ site.
+  # Already-published version dirs (e.g. /controller/0.2.0-alpha.1/) stay served as
+  # frozen snapshots; only the moving `latest` alias and the bare prefix redirect.
+  echo "Writing legacy /controller + /helm-chart -> /docs redirects..."
+  cat > "${PUBLIC_DIR}/_redirects" <<'REDIR'
+/controller/latest/* /docs/latest/:splat 301
+/helm-chart/latest/* /docs/latest/:splat 301
+/controller/latest /docs/latest/ 301
+/helm-chart/latest /docs/latest/ 301
+/controller/ /docs/ 301
+/helm-chart/ /docs/ 301
+REDIR
+else
+  deploy_doc_site "controller" "${MAIN_REPO}/docs/controller"
+  deploy_doc_site "helm-chart" "${MAIN_REPO}/charts/haptic"
+fi
 
 # Publish the browser playground bundle (fetched from the haptic build artifact).
 # Non-fatal: a playground hiccup must never block the docs deploy (and also disables
@@ -306,8 +332,13 @@ done
 
 echo ""
 echo "=== Deployment complete ==="
-echo "Controller versions.json:"
-cat "${PUBLIC_DIR}/controller/versions.json"
-echo ""
-echo "Helm-chart versions.json:"
-cat "${PUBLIC_DIR}/helm-chart/versions.json"
+if [ "$MERGED_DOCS" = true ]; then
+  echo "Docs versions.json:"
+  cat "${PUBLIC_DIR}/docs/versions.json"
+else
+  echo "Controller versions.json:"
+  cat "${PUBLIC_DIR}/controller/versions.json"
+  echo ""
+  echo "Helm-chart versions.json:"
+  cat "${PUBLIC_DIR}/helm-chart/versions.json"
+fi
