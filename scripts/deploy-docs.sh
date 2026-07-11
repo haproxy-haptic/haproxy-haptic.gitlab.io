@@ -134,9 +134,20 @@ deploy_doc_site() {
 
   echo "Building ${name} docs version ${VERSION}..."
 
+  # Canonical base for every page (mkdocs site_url, read via !ENV in
+  # mkdocs.yml): point at the latest alias when this build creates or a
+  # previous deploy published one, else at this build's own version dir —
+  # so canonicals always resolve and versions consolidate onto the default.
+  local canon="${VERSION}"
+  if [ "$IS_LATEST" = true ] || [ -e "${PUBLIC_DIR}/${name}/latest" ]; then
+    canon="latest"
+  fi
+  export DOCS_SITE_URL="https://haproxy-haptic.org/${name}/${canon}/"
+
   cd "$src_dir"
   mkdocs build -d "${PUBLIC_DIR}/${name}/${VERSION}"
   cd - > /dev/null
+  unset DOCS_SITE_URL
 
   # Update latest symlink if this is the latest version
   if [ "$IS_LATEST" = true ]; then
@@ -314,6 +325,12 @@ if [ "$MERGED_DOCS" = true ]; then
     LEGACY_TARGET="/docs/latest"
   else
     LEGACY_TARGET="/docs/dev"
+  fi
+  # robots.txt (from the landing build) advertises the dev sitemap by default;
+  # once a stable release publishes the /docs/latest alias, advertise that
+  # sitemap instead.
+  if [ -e "${PUBLIC_DIR}/docs/latest" ] && [ -f "${PUBLIC_DIR}/robots.txt" ]; then
+    sed -i 's|/docs/dev/sitemap.xml|/docs/latest/sitemap.xml|' "${PUBLIC_DIR}/robots.txt"
   fi
   echo "Writing legacy /controller + /helm-chart -> ${LEGACY_TARGET} redirects..."
   cat > "${PUBLIC_DIR}/_redirects" <<REDIR
