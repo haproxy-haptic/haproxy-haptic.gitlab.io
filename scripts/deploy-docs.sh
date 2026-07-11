@@ -303,12 +303,24 @@ if [ "$MERGED_DOCS" = true ]; then
   # Forward the old /controller/ and /helm-chart/ URLs to the merged /docs/ site.
   # Already-published version dirs (e.g. /controller/0.2.0-alpha.1/) stay served as
   # frozen snapshots; only the moving `latest` alias and the bare prefix redirect.
-  echo "Writing legacy /controller + /helm-chart -> /docs redirects..."
-  cat > "${PUBLIC_DIR}/_redirects" <<'REDIR'
-/controller/latest/* /docs/latest/:splat 301
-/helm-chart/latest/* /docs/latest/:splat 301
-/controller/latest /docs/latest/ 301
-/helm-chart/latest /docs/latest/ 301
+  #
+  # The physical `latest` symlinks from the two-site era shadow the rules below —
+  # GitLab Pages redirects only fire when no file matches the request — so remove
+  # them or /controller/latest/* keeps serving the frozen pre-merge site.
+  rm -rf "${PUBLIC_DIR}/controller/latest" "${PUBLIC_DIR}/helm-chart/latest"
+  # Until the first stable release publishes a /docs/latest alias, point the
+  # legacy `latest` URLs at the moving dev docs instead of a 404.
+  if [ -e "${PUBLIC_DIR}/docs/latest" ]; then
+    LEGACY_TARGET="/docs/latest"
+  else
+    LEGACY_TARGET="/docs/dev"
+  fi
+  echo "Writing legacy /controller + /helm-chart -> ${LEGACY_TARGET} redirects..."
+  cat > "${PUBLIC_DIR}/_redirects" <<REDIR
+/controller/latest/* ${LEGACY_TARGET}/:splat 301
+/helm-chart/latest/* ${LEGACY_TARGET}/:splat 301
+/controller/latest ${LEGACY_TARGET}/ 301
+/helm-chart/latest ${LEGACY_TARGET}/ 301
 /controller/ /docs/ 301
 /helm-chart/ /docs/ 301
 REDIR
