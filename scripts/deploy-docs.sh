@@ -1,200 +1,206 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
 
-# Deploy MkDocs documentation with versioning support
-#
-# Usage: ./scripts/deploy-docs.sh <version> <main-repo-path> <public-dir>
-# Example: ./scripts/deploy-docs.sh dev ./main-repo ./public
-# Example: ./scripts/deploy-docs.sh v1.0.0 ./main-repo ./public
-# Example: ./scripts/deploy-docs.sh v1.0.0-alpha.1 ./main-repo ./public
-#
-# Version handling (leading "v" is stripped automatically):
-#   - "dev": No "latest" alias (JS fallback picks it when no release exists)
-#   - "v1.0.0" / "1.0.0": Final release, gets "latest" alias, removes matching prereleases
-#   - "v1.0.0-alpha.1": Prerelease, NO "latest" alias, kept until final release
+set -euo pipefail
 
-VERSION="${1:?Version required (e.g., dev, v1.0.0, v1.0.0-alpha.1)}"
-MAIN_REPO="${2:?Main repo path required}"
-PUBLIC_DIR="${3:?Public directory required}"
-
-# Normalize: strip leading "v" (CI passes v0.1.0, helm expects 0.1.0)
+VERSION="${1:?version required}"
+MAIN_REPO="${2:?main repo path required}"
+PUBLIC_DIR="${3:?public directory required}"
+MODE="${4:-publish}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VERSION="${VERSION#v}"
-
-# Convert to absolute paths
 MAIN_REPO="$(cd "$MAIN_REPO" && pwd)"
 PUBLIC_DIR="$(mkdir -p "$PUBLIC_DIR" && cd "$PUBLIC_DIR" && pwd)"
 
-# Check if version is a prerelease (contains -alpha, -beta, or -rc)
-is_prerelease() {
-  [[ "$1" =~ -(alpha|beta|rc)\. ]]
-}
-
-# Extract base version from prerelease (1.0.0-alpha.1 -> 1.0.0)
-get_base_version() {
-  echo "$1" | sed 's/-\(alpha\|beta\|rc\)\..*//'
-}
-
-# Determine if this version should be "latest"
-# - "dev" does NOT get latest alias (JS fallback picks versions[0])
-# - Final releases (1.0.0) get latest alias
-# - Prereleases (1.0.0-alpha.1) do NOT get latest alias
-if [[ "$VERSION" == "dev" ]]; then
-  IS_LATEST=false
-  IS_PRERELEASE=false
-  IS_FINAL_RELEASE=false
-elif is_prerelease "$VERSION"; then
-  IS_LATEST=false
-  IS_PRERELEASE=true
-  IS_FINAL_RELEASE=false
-elif [[ "$VERSION" =~ ^[0-9] ]]; then
-  IS_LATEST=true
-  IS_PRERELEASE=false
-  IS_FINAL_RELEASE=true
-  BASE_VERSION="$VERSION"
+[[ "$MODE" == publish || "$MODE" == preview ]] || { echo "invalid deployment mode: $MODE" >&2; exit 1; }
+if [ "$MODE" = publish ]; then
+  SOURCE_COMMIT="${HAPTIC_RELEASE_COMMIT_SHA:?HAPTIC_RELEASE_COMMIT_SHA is required}"
+  SOURCE_PIPELINE="${HAPTIC_RELEASE_PIPELINE_ID:?HAPTIC_RELEASE_PIPELINE_ID is required}"
+  SOURCE_JOB_NAME="${HAPTIC_RELEASE_PLAYGROUND_JOB_NAME:?HAPTIC_RELEASE_PLAYGROUND_JOB_NAME is required}"
+  CI_JOB_TOKEN="${CI_JOB_TOKEN:?CI_JOB_TOKEN is required}"
 else
-  IS_LATEST=false
-  IS_PRERELEASE=false
-  IS_FINAL_RELEASE=false
+  SOURCE_COMMIT="${CI_COMMIT_SHA:-$(git -C "$MAIN_REPO" rev-parse HEAD)}"
+  SOURCE_PIPELINE="${CI_PIPELINE_ID:-0}"
+  SOURCE_JOB="${CI_JOB_ID:-0}"
+  SOURCE_JOB_NAME=preview
 fi
 
-# Function to update versions.json
-update_versions_json() {
-  local prefix=$1
-  local versions_file="${PUBLIC_DIR}/${prefix}/versions.json"
+[[ "$VERSION" == dev || "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]] || {
+  echo "invalid documentation version: $VERSION" >&2
+  exit 1
+}
+[[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "invalid source commit: $SOURCE_COMMIT" >&2; exit 1; }
+[[ "$SOURCE_PIPELINE" =~ ^[0-9]+$ ]] || { echo "invalid source pipeline: $SOURCE_PIPELINE" >&2; exit 1; }
+[[ "$SOURCE_JOB_NAME" =~ ^[a-z0-9-]+$ ]] || { echo "invalid playground job name: $SOURCE_JOB_NAME" >&2; exit 1; }
 
-  mkdir -p "${PUBLIC_DIR}/${prefix}"
+EXPECTED_REF=main
+[ "$VERSION" = dev ] || EXPECTED_REF="v${VERSION}"
 
-  # Restore backup if exists (mkdocs cleans public dir during build)
-  local backup_file="${VERSIONS_BACKUP_DIR:-/tmp/versions-backup}/${prefix}-versions.json"
-  if [ ! -f "$versions_file" ] && [ -f "$backup_file" ]; then
-    echo "Restoring ${prefix}/versions.json from backup..."
-    cp "$backup_file" "$versions_file"
-  fi
+tmp_root=$(mktemp -d)
+trap 'rm -rf -- "$tmp_root"' EXIT
 
-  if [ -f "$versions_file" ]; then
-    local tmp_file="/tmp/versions_update.json"
+gl_get() {
+  curl -sSf --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "$1" 2>/dev/null || curl -sSf "$1"
+}
 
-    if [ "$IS_FINAL_RELEASE" = true ]; then
-      # Final release: remove matching prereleases (v1.0.0-alpha.*, v1.0.0-beta.*, v1.0.0-rc.*)
-      # Also remove latest alias from other versions and add this as latest
-      echo "Cleaning up prereleases matching ${BASE_VERSION}..."
-      jq --arg v "$VERSION" --arg base "$BASE_VERSION" \
-        '[{"version":$v,"title":$v,"aliases":["latest"]}] + [.[] | select(.version != $v and .version != ("v" + $v) and (.version | startswith($base + "-") | not)) | .aliases = []]' \
-        "$versions_file" > "$tmp_file" && mv "$tmp_file" "$versions_file"
-    elif [ "$IS_LATEST" = true ]; then
-      # Dev or other latest: remove latest alias from others, add to this version
-      jq --arg v "$VERSION" \
-        '[{"version":$v,"title":$v,"aliases":["latest"]}] + [.[] | select(.version != $v) | .aliases = []]' \
-        "$versions_file" > "$tmp_file" && mv "$tmp_file" "$versions_file"
-    else
-      # Prerelease or other: just add without latest alias
-      jq --arg v "$VERSION" \
-        '[{"version":$v,"title":$v,"aliases":[]}] + [.[] | select(.version != $v)]' \
-        "$versions_file" > "$tmp_file" && mv "$tmp_file" "$versions_file"
+gl_download() {
+  curl -sSfL --output "$2" --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "$1" 2>/dev/null ||
+    curl -sSfL --output "$2" "$1"
+}
+
+identity_matches() {
+  local file=$1
+  jq -e \
+    --arg version "$VERSION" \
+    --arg commit "$SOURCE_COMMIT" \
+    --arg pipeline "$SOURCE_PIPELINE" \
+    --arg job "$SOURCE_JOB" \
+    '.version == $version and .commit == $commit and .pipeline == $pipeline and .job == $job' \
+    "$file" >/dev/null
+}
+
+write_identity() {
+  jq -n \
+    --arg version "$VERSION" \
+    --arg commit "$SOURCE_COMMIT" \
+    --arg pipeline "$SOURCE_PIPELINE" \
+    --arg job "$SOURCE_JOB" \
+    '{version:$version, commit:$commit, pipeline:$pipeline, job:$job}' > "$1"
+}
+
+publish_version_dir() {
+  local source=$1
+  local destination=$2
+  local required_file=$3
+
+  if [ -e "$destination" ]; then
+    [ -d "$destination" ] || { echo "$destination is not a directory" >&2; return 1; }
+    [ -s "$destination/$required_file" ] || { echo "$destination is incomplete" >&2; return 1; }
+    if [ -s "$destination/release-identity.json" ]; then
+      identity_matches "$destination/release-identity.json" || {
+        echo "$destination belongs to another source" >&2
+        return 1
+      }
+      echo "Keeping existing immutable $destination"
+      return 0
     fi
-  else
-    # Create new versions.json
-    if [ "$IS_LATEST" = true ]; then
-      echo "[{\"version\":\"${VERSION}\",\"title\":\"${VERSION}\",\"aliases\":[\"latest\"]}]" > "$versions_file"
-    else
-      echo "[{\"version\":\"${VERSION}\",\"title\":\"${VERSION}\",\"aliases\":[]}]" > "$versions_file"
-    fi
+
+    local comparison="$tmp_root/legacy-comparison"
+    rm -rf -- "$comparison"
+    cp -a "$source" "$comparison"
+    rm -f -- "$comparison/release-identity.json"
+    diff -qr "$destination" "$comparison" >/dev/null || {
+      echo "$destination has no identity marker and differs from the exact rebuild" >&2
+      return 1
+    }
+    cp "$source/release-identity.json" "$destination/release-identity.json"
+    return 0
   fi
 
-  # Ensure dev is always in versions.json if dev directory exists
-  local dev_dir="${PUBLIC_DIR}/${prefix}/dev"
-  if [ -d "$dev_dir" ] && ! jq -e '.[] | select(.version == "dev")' "$versions_file" > /dev/null 2>&1; then
-    echo "Adding missing 'dev' entry to versions.json..."
-    local tmp_file="/tmp/versions_dev_fix.json"
-    jq '. + [{"version":"dev","title":"dev","aliases":[]}]' "$versions_file" > "$tmp_file" && mv "$tmp_file" "$versions_file"
-  fi
+  local parent name stage
+  parent=$(dirname "$destination")
+  name=$(basename "$destination")
+  mkdir -p "$parent"
+  stage=$(mktemp -d "$parent/.${name}.stage.XXXXXX")
+  cp -a "$source/." "$stage/"
+  mv "$stage" "$destination"
 }
 
-# Function to clean up prerelease directories when final release ships
-cleanup_prerelease_dirs() {
+replace_moving_dir() {
+  local source=$1
+  local destination=$2
+  local parent name stage
+  parent=$(dirname "$destination")
+  name=$(basename "$destination")
+  mkdir -p "$parent"
+  stage=$(mktemp -d "$parent/.${name}.stage.XXXXXX")
+  cp -a "$source/." "$stage/"
+  rm -rf -- "$destination"
+  mv "$stage" "$destination"
+}
+
+collect_versions() {
   local prefix=$1
-  local base_version=$2
-  local site_dir="${PUBLIC_DIR}/${prefix}"
+  local versions_file="$PUBLIC_DIR/$prefix/versions.json"
 
-  if [ -d "$site_dir" ]; then
-    echo "Cleaning up prerelease directories for ${base_version}..."
-    for prerelease_dir in "${site_dir}/${base_version}"-{alpha,beta,rc}.*; do
-      if [ -d "$prerelease_dir" ]; then
-        echo "  Removing: $(basename "$prerelease_dir")"
-        rm -rf "$prerelease_dir"
-      fi
-    done
+  {
+    if [ -f "$versions_file" ]; then
+      jq -r 'if type == "array" then .[].version else .versions[].version end' "$versions_file"
+    fi
+    find "$PUBLIC_DIR/$prefix" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null || true
+    printf '%s\n' "$VERSION"
+  } | sed 's/^v//' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$' | sort -u |
+    "$SCRIPT_DIR/semver-order.py"
+}
+
+update_docs_versions() {
+  local prefix=$1
+  local versions_file="$PUBLIC_DIR/$prefix/versions.json"
+  local latest=
+  local -a releases=()
+  mapfile -t releases < <(collect_versions "$prefix")
+
+  local release
+  for release in "${releases[@]}"; do
+    if [[ "$release" != *-* ]]; then
+      latest=$release
+      break
+    fi
+  done
+
+  mkdir -p "$PUBLIC_DIR/$prefix"
+  jq -n --args '$ARGS.positional | map({version:., title:., aliases:[]})' \
+    "${releases[@]}" > "$versions_file"
+  if [ -d "$PUBLIC_DIR/$prefix/dev" ]; then
+    jq '. + [{version:"dev", title:"dev", aliases:[]}]' "$versions_file" > "$tmp_root/docs-versions.json"
+    mv "$tmp_root/docs-versions.json" "$versions_file"
+  fi
+  if [ -n "$latest" ]; then
+    [ -d "$PUBLIC_DIR/$prefix/$latest" ] || { echo "missing latest target: $prefix/$latest" >&2; return 1; }
+    jq --arg latest "$latest" 'map(.aliases = (if .version == $latest then ["latest"] else [] end))' \
+      "$versions_file" > "$tmp_root/docs-versions.json"
+    mv "$tmp_root/docs-versions.json" "$versions_file"
+    if [ -e "$PUBLIC_DIR/$prefix/latest" ] && [ ! -L "$PUBLIC_DIR/$prefix/latest" ]; then
+      echo "$prefix/latest is not a symlink" >&2
+      return 1
+    fi
+    ln -sfn "$latest" "$PUBLIC_DIR/$prefix/latest"
   fi
 }
 
-# Function to build and deploy a doc site
-deploy_doc_site() {
-  local name=$1
-  local src_dir=$2
-
-  echo "Building ${name} docs version ${VERSION}..."
-
-  # Canonical base for every page (mkdocs site_url, read via !ENV in
-  # mkdocs.yml): point at the latest alias when this build creates or a
-  # previous deploy published one, else at this build's own version dir —
-  # so canonicals always resolve and versions consolidate onto the default.
-  local canon="${VERSION}"
-  if [ "$IS_LATEST" = true ] || [ -e "${PUBLIC_DIR}/${name}/latest" ]; then
-    canon="latest"
-  fi
-  export DOCS_SITE_URL="https://haproxy-haptic.org/${name}/${canon}/"
-
-  cd "$src_dir"
-  mkdocs build -d "${PUBLIC_DIR}/${name}/${VERSION}"
-  cd - > /dev/null
-  unset DOCS_SITE_URL
-
-  # Update latest symlink if this is the latest version
-  if [ "$IS_LATEST" = true ]; then
-    cd "${PUBLIC_DIR}/${name}"
-    rm -f latest
-    ln -s "$VERSION" latest
-    cd - > /dev/null
-  fi
-
-  # Clean up prerelease directories if this is a final release
-  if [ "$IS_FINAL_RELEASE" = true ]; then
-    cleanup_prerelease_dirs "$name" "$BASE_VERSION"
-  fi
-
-  # Update versions.json
-  update_versions_json "$name"
-}
-
-# Refresh the shared public/playground/versions.json (object schema the shell's
-# initVersions consumes: { current, versions: [{version, stable}] }). Upserts this
-# VERSION and sets `current` to the newest non-dev release (prereleases included).
 update_playground_versions() {
-  local vfile="${PUBLIC_DIR}/playground/versions.json"
-  mkdir -p "$(dirname "$vfile")"
-  local stable=true
-  if [ "$VERSION" = "dev" ] || is_prerelease "$VERSION"; then stable=false; fi
-  [ -f "$vfile" ] || echo '{"versions":[]}' > "$vfile"
+  local versions_file="$PUBLIC_DIR/playground/versions.json"
+  local current=
+  local -a releases=()
+  mapfile -t releases < <(collect_versions playground)
 
-  local tmp="/tmp/pg-versions.json"
-  jq --arg v "$VERSION" --argjson stable "$stable" \
-    '.versions = ([{version:$v, stable:$stable}] + [.versions[] | select(.version != $v)])' \
-    "$vfile" > "$tmp" && mv "$tmp" "$vfile"
-
-  # current = newest non-dev version (dev is never `current`); omitted while only dev exists.
-  local current
-  current="$(jq -r '[.versions[] | select(.version != "dev") | .version] | .[0] // empty' "$vfile")"
-  if [ -n "$current" ]; then
-    jq --arg c "$current" '.current = $c' "$vfile" > "$tmp" && mv "$tmp" "$vfile"
+  local release
+  for release in "${releases[@]}"; do
+    if [[ "$release" != *-* ]]; then
+      current=$release
+      break
+    fi
+  done
+  if [ -z "$current" ] && [ "${#releases[@]}" -gt 0 ]; then
+    current=${releases[0]}
   fi
-  echo "playground/versions.json:"; cat "$vfile"
 
-  # Landing redirect so bare /playground/ resolves to the current (or dev) shell.
-  # The JS redirect carries the query string and fragment through, so deep-links
-  # like /playground/?preset=ingress and /playground/#s=<share> keep working; the
-  # meta-refresh + link is a no-JS fallback (target shell only).
-  local landing="${current:-dev}"
-  cat > "${PUBLIC_DIR}/playground/index.html" <<HTML
+  jq -n --args '$ARGS.positional | map({version:., stable:(contains("-") | not)})' \
+    "${releases[@]}" > "$tmp_root/playground-releases.json"
+  if [ -d "$PUBLIC_DIR/playground/dev" ]; then
+    jq '. + [{version:"dev", stable:false}]' "$tmp_root/playground-releases.json" > "$tmp_root/playground-with-dev.json"
+  else
+    cp "$tmp_root/playground-releases.json" "$tmp_root/playground-with-dev.json"
+  fi
+  if [ -n "$current" ]; then
+    jq --arg current "$current" '{current:$current, versions:.}' \
+      "$tmp_root/playground-with-dev.json" > "$versions_file"
+  else
+    jq '{versions:.}' "$tmp_root/playground-with-dev.json" > "$versions_file"
+  fi
+
+  local landing=${current:-dev}
+  [ -d "$PUBLIC_DIR/playground/$landing" ] || { echo "missing playground landing target: $landing" >&2; return 1; }
+  cat > "$PUBLIC_DIR/playground/index.html" <<HTML
 <!doctype html><html lang="en"><head><meta charset="utf-8">
 <title>HAPTIC Playground</title>
 <script>location.replace('./${landing}/' + location.search + location.hash)</script>
@@ -204,176 +210,173 @@ update_playground_versions() {
 HTML
 }
 
-# GitLab API GET / artifact download with the CI job token, falling back to an
-# anonymous request (haptic is a public project).
-gl_get() { curl -sSf --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "$1" 2>/dev/null || curl -sSf "$1" 2>/dev/null; }
-gl_dl()  { curl -sSf --location --output "$2" --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "$1" 2>/dev/null || curl -sSf --location --output "$2" "$1" 2>/dev/null; }
+deploy_doc_site() {
+  local name=$1
+  local source=$2
+  local build_dir="$tmp_root/docs-$name"
+  local destination="$PUBLIC_DIR/$name/$VERSION"
+  local canonical=$VERSION
+  local -a releases=()
 
-# Fetch the browser-playground bundle from the haptic build-playground-wasm job
-# artifact and publish it under public/playground/<version>/, then refresh
-# versions.json. CI-only (needs CI_JOB_TOKEN); skipped locally, where the bundle is
-# built directly via scripts/build-playground.sh.
-deploy_playground() {
-  if [ -z "${CI_JOB_TOKEN:-}" ]; then
-    echo "Skipping playground publish (no CI_JOB_TOKEN; build locally with scripts/build-playground.sh)"
+  if [ "$VERSION" != dev ] && [ -s "$destination/release-identity.json" ]; then
+    [ -s "$destination/index.html" ] || { echo "$destination is incomplete" >&2; return 1; }
+    identity_matches "$destination/release-identity.json" || {
+      echo "$destination belongs to another source" >&2
+      return 1
+    }
+    echo "Keeping existing immutable $destination"
+    update_docs_versions "$name"
     return 0
   fi
-  # dev pulls the latest main build; a release pulls its v-tag build.
-  local ref="main"
-  [ "$VERSION" = "dev" ] || ref="v${VERSION}"
-  local project="haproxy-haptic%2Fhaptic"
-  local api="https://gitlab.com/api/v4/projects/${project}"
 
-  # Resolve the build-playground-wasm artifact for the LATEST pipeline on $ref by
-  # its specific job id. A job's artifact downloads as soon as that job succeeds —
-  # unlike jobs/artifacts/<ref>/download, which resolves to the latest *fully
-  # successful pipeline* and returns a stale bundle while this commit's pipeline is
-  # still running its other (e.g. e2e) jobs. haptic's trigger-pages waits for
-  # build-playground-wasm, so the job is finished on the newest pipeline by now.
-  echo "Resolving playground bundle (ref=${ref})..."
-  # Fetch the build-playground-wasm artifact for the SAME commit the docs were
-  # just built from (the cloned main-repo HEAD), so the published docs and
-  # playground never drift. Pinning by sha (not "latest pipeline") avoids the race
-  # where this deploy is triggered before that commit's build-playground-wasm has
-  # finished and would otherwise grab a stale bundle; wait briefly if it hasn't.
-  local sha pid jobid url tries=0
-  sha="$(git -C "${MAIN_REPO}" rev-parse HEAD 2>/dev/null || true)"
-  while [ -n "$sha" ]; do
-    pid="$(gl_get "${api}/pipelines?ref=${ref}&sha=${sha}&per_page=1" | jq -r '.[0].id // empty')"
-    [ -n "$pid" ] && jobid="$(gl_get "${api}/pipelines/${pid}/jobs?per_page=100" | jq -r '[.[] | select(.name=="build-playground-wasm" and .status=="success")][0].id // empty')"
-    [ -n "${jobid:-}" ] && break
-    tries=$((tries + 1)); [ "$tries" -ge 12 ] && break   # ~4 min ceiling, then fall back
-    echo "  waiting for build-playground-wasm on ${sha:0:8} (try ${tries}/12)..."; sleep 20
+  mapfile -t releases < <(collect_versions "$name")
+  local release
+  for release in "${releases[@]}"; do
+    if [[ "$release" != *-* ]]; then
+      canonical=latest
+      break
+    fi
   done
-  if [ -n "${jobid:-}" ]; then
-    url="${api}/jobs/${jobid}/artifacts"
-    echo "  pipeline ${pid} (${sha:0:8}) -> build-playground-wasm job ${jobid}"
+
+  DOCS_SITE_URL="https://haproxy-haptic.org/${name}/${canonical}/" mkdocs build -f "$source/mkdocs.yml" -d "$build_dir"
+  write_identity "$build_dir/release-identity.json"
+  if [ "$VERSION" = dev ]; then
+    replace_moving_dir "$build_dir" "$PUBLIC_DIR/$name/dev"
   else
-    url="${api}/jobs/artifacts/${ref}/download?job=build-playground-wasm"
-    echo "  no build-playground-wasm for ${sha:-$ref}; falling back to latest-successful-pipeline artifact" >&2
+    publish_version_dir "$build_dir" "$destination" index.html
   fi
-  if ! gl_dl "$url" /tmp/pg.zip; then
-    echo "WARNING: no playground artifact for ref ${ref}; leaving existing /playground/ untouched" >&2
-    return 0
-  fi
-  rm -rf /tmp/pg-extract && mkdir -p /tmp/pg-extract
-  unzip -q -o /tmp/pg.zip -d /tmp/pg-extract
-  rm -f /tmp/pg.zip
-  if [ ! -d /tmp/pg-extract/public/playground ]; then
-    echo "WARNING: artifact had no public/playground/; skipping" >&2
-    return 0
-  fi
-  mkdir -p "${PUBLIC_DIR}/playground"
-  # Copies the <version>/ dir (raw + .br + .gz siblings) into the site.
-  cp -a /tmp/pg-extract/public/playground/. "${PUBLIC_DIR}/playground/"
-  rm -rf /tmp/pg-extract
-  update_playground_versions
-  echo "Published playground/${VERSION}:"
-  ls "${PUBLIC_DIR}/playground/${VERSION}" 2>/dev/null | head
+  update_docs_versions "$name"
 }
 
-echo "=== Deploying docs ==="
-echo "Version: ${VERSION}"
-echo "Main repo: ${MAIN_REPO}"
-echo "Public dir: ${PUBLIC_DIR}"
-echo "Is latest: ${IS_LATEST}"
-echo "Is prerelease: ${IS_PRERELEASE}"
-echo "Is final release: ${IS_FINAL_RELEASE}"
-echo ""
+repo_commit=$(git -C "$MAIN_REPO" rev-parse HEAD)
+[ "$repo_commit" = "$SOURCE_COMMIT" ] || {
+  echo "documentation checkout is $repo_commit, expected $SOURCE_COMMIT" >&2
+  exit 1
+}
 
-# The controller + Helm chart docs merged into one /docs/ site (docs/site/).
-# Older release tags still carry the two-site layout (docs/controller/ +
-# charts/haptic/), so build whichever the checked-out main-repo actually has.
-MERGED_DOCS=false
-[ -d "${MAIN_REPO}/docs/site" ] && MERGED_DOCS=true
+if [ "$MODE" = publish ]; then
+  api="${HAPTIC_API_BASE:-https://gitlab.com/api/v4/projects/haproxy-haptic%2Fhaptic}"
+  pipeline_json=$(gl_get "$api/pipelines/$SOURCE_PIPELINE")
+  jq -e \
+    --arg ref "$EXPECTED_REF" \
+    --arg commit "$SOURCE_COMMIT" \
+    '.ref == $ref and .sha == $commit' <<<"$pipeline_json" >/dev/null || {
+    echo "source pipeline $SOURCE_PIPELINE does not match ref $EXPECTED_REF and commit $SOURCE_COMMIT" >&2
+    exit 1
+  }
+  page=1
+  job_ids=()
+  while true; do
+    jobs_json=$(gl_get "$api/pipelines/$SOURCE_PIPELINE/jobs?include_retried=false&per_page=100&page=$page")
+    mapfile -t page_job_ids < <(jq -r --arg name "$SOURCE_JOB_NAME" \
+      '.[] | select(.name == $name and .status == "success") | .id' <<<"$jobs_json")
+    job_ids+=("${page_job_ids[@]}")
+    [ "$(jq 'length' <<<"$jobs_json")" -eq 100 ] || break
+    page=$((page + 1))
+    [ "$page" -le 100 ] || { echo "source pipeline job list exceeds 10000 entries" >&2; exit 1; }
+  done
+  [ "${#job_ids[@]}" -eq 1 ] || {
+    echo "pipeline $SOURCE_PIPELINE does not have exactly one successful $SOURCE_JOB_NAME job" >&2
+    exit 1
+  }
+  SOURCE_JOB=${job_ids[0]}
+  job_json=$(gl_get "$api/jobs/$SOURCE_JOB")
+  jq -e \
+    --arg name "$SOURCE_JOB_NAME" \
+    --arg status success \
+    --arg ref "$EXPECTED_REF" \
+    --arg commit "$SOURCE_COMMIT" \
+    --argjson pipeline "$SOURCE_PIPELINE" \
+    --argjson job "$SOURCE_JOB" \
+    '.id == $job and .name == $name and .status == $status and .ref == $ref and .commit.id == $commit and .pipeline.id == $pipeline' \
+    <<<"$job_json" >/dev/null || {
+    echo "playground job $SOURCE_JOB does not match pipeline $SOURCE_PIPELINE, ref $EXPECTED_REF, and commit $SOURCE_COMMIT" >&2
+    exit 1
+  }
 
-# Copy shared CSS to all doc sites
-echo "Copying shared CSS..."
-cp "${MAIN_REPO}/docs/shared/colors.css" "${MAIN_REPO}/docs/landing/docs/stylesheets/"
-if [ "$MERGED_DOCS" = true ]; then
-  cp "${MAIN_REPO}/docs/shared/colors.css" "${MAIN_REPO}/docs/site/docs/stylesheets/"
-else
-  cp "${MAIN_REPO}/docs/shared/colors.css" "${MAIN_REPO}/docs/controller/docs/stylesheets/"
-  cp "${MAIN_REPO}/docs/shared/colors.css" "${MAIN_REPO}/charts/haptic/docs/stylesheets/"
+  playground_source="$PUBLIC_DIR/playground/$VERSION"
+  reuse_playground=false
+  if [ "$VERSION" != dev ] && [ -s "$playground_source/release-identity.json" ]; then
+    reuse_playground=true
+    for required in index.html playground.wasm schemas.json release-identity.json; do
+      [ -s "$playground_source/$required" ] || reuse_playground=false
+    done
+    identity_matches "$playground_source/release-identity.json" || reuse_playground=false
+  fi
+  if [ "$reuse_playground" = true ]; then
+    echo "Using the existing exact playground mirror for retry $VERSION"
+  else
+    artifact="$tmp_root/playground.zip"
+    gl_download "$api/jobs/$SOURCE_JOB/artifacts" "$artifact" || {
+      echo "playground artifact download failed for exact job $SOURCE_JOB" >&2
+      exit 1
+    }
+    unzip -q "$artifact" -d "$tmp_root/playground-artifact"
+    playground_source="$tmp_root/playground-artifact/public/playground/$VERSION"
+    for required in index.html playground.wasm schemas.json release-identity.json; do
+      [ -s "$playground_source/$required" ] || {
+        echo "playground job $SOURCE_JOB is missing public/playground/$VERSION/$required" >&2
+        exit 1
+      }
+    done
+    identity_matches "$playground_source/release-identity.json" || {
+      echo "playground job $SOURCE_JOB carries stale release identity" >&2
+      exit 1
+    }
+  fi
 fi
 
-# Build landing page (not versioned)
-# Use temp directory to avoid mkdocs cleaning existing version directories
-echo "Building landing page..."
-cd "${MAIN_REPO}/docs/landing"
-LANDING_TEMP=$(mktemp -d)
-mkdocs build -d "${LANDING_TEMP}"
-# Copy landing files to public dir without removing existing version directories
-cp -a "${LANDING_TEMP}"/* "${PUBLIC_DIR}/"
-rm -rf "${LANDING_TEMP}"
-cd - > /dev/null
+cp "$MAIN_REPO/docs/shared/colors.css" "$MAIN_REPO/docs/landing/docs/stylesheets/"
+merged_docs=false
+if [ -d "$MAIN_REPO/docs/site" ]; then
+  merged_docs=true
+  cp "$MAIN_REPO/docs/shared/colors.css" "$MAIN_REPO/docs/site/docs/stylesheets/"
+else
+  cp "$MAIN_REPO/docs/shared/colors.css" "$MAIN_REPO/docs/controller/docs/stylesheets/"
+  cp "$MAIN_REPO/docs/shared/colors.css" "$MAIN_REPO/charts/haptic/docs/stylesheets/"
+fi
 
-# Deploy versioned doc site(s)
-if [ "$MERGED_DOCS" = true ]; then
-  deploy_doc_site "docs" "${MAIN_REPO}/docs/site"
-  # Forward the old /controller/ and /helm-chart/ URLs to the merged /docs/ site.
-  # Already-published version dirs (e.g. /controller/0.2.0-alpha.1/) stay served as
-  # frozen snapshots; only the moving `latest` alias and the bare prefix redirect.
-  #
-  # The physical `latest` symlinks from the two-site era shadow the rules below —
-  # GitLab Pages redirects only fire when no file matches the request — so remove
-  # them or /controller/latest/* keeps serving the frozen pre-merge site.
-  rm -rf "${PUBLIC_DIR}/controller/latest" "${PUBLIC_DIR}/helm-chart/latest"
-  # Until the first stable release publishes a /docs/latest alias, point the
-  # legacy `latest` URLs at the moving dev docs instead of a 404.
-  if [ -e "${PUBLIC_DIR}/docs/latest" ]; then
-    LEGACY_TARGET="/docs/latest"
-  else
-    LEGACY_TARGET="/docs/dev"
+if [ "$VERSION" = dev ]; then
+  landing_dir="$tmp_root/landing"
+  mkdocs build -f "$MAIN_REPO/docs/landing/mkdocs.yml" -d "$landing_dir"
+  cp -a "$landing_dir/." "$PUBLIC_DIR/"
+  mkdir -p "$PUBLIC_DIR/shared"
+  cp -a "$MAIN_REPO/docs/shared/." "$PUBLIC_DIR/shared/"
+else
+  [ -s "$PUBLIC_DIR/index.html" ] || { echo "existing landing site is missing" >&2; exit 1; }
+  [ -d "$PUBLIC_DIR/shared" ] || { echo "existing shared assets are missing" >&2; exit 1; }
+fi
+
+if [ "$merged_docs" = true ]; then
+  deploy_doc_site docs "$MAIN_REPO/docs/site"
+  rm -rf -- "$PUBLIC_DIR/controller/latest" "$PUBLIC_DIR/helm-chart/latest"
+  legacy_target=/docs/dev
+  [ -e "$PUBLIC_DIR/docs/latest" ] && legacy_target=/docs/latest
+  if [ -f "$PUBLIC_DIR/robots.txt" ]; then
+    sed -i -E "s#/docs/(dev|latest)/sitemap.xml#${legacy_target}/sitemap.xml#" "$PUBLIC_DIR/robots.txt"
   fi
-  # robots.txt (from the landing build) advertises the dev sitemap by default;
-  # once a stable release publishes the /docs/latest alias, advertise that
-  # sitemap instead.
-  if [ -e "${PUBLIC_DIR}/docs/latest" ] && [ -f "${PUBLIC_DIR}/robots.txt" ]; then
-    sed -i 's|/docs/dev/sitemap.xml|/docs/latest/sitemap.xml|' "${PUBLIC_DIR}/robots.txt"
-  fi
-  echo "Writing legacy /controller + /helm-chart -> ${LEGACY_TARGET} redirects..."
-  cat > "${PUBLIC_DIR}/_redirects" <<REDIR
-/controller/latest/* ${LEGACY_TARGET}/:splat 301
-/helm-chart/latest/* ${LEGACY_TARGET}/:splat 301
-/controller/latest ${LEGACY_TARGET}/ 301
-/helm-chart/latest ${LEGACY_TARGET}/ 301
+  cat > "$PUBLIC_DIR/_redirects" <<REDIRECTS
+/controller/latest/* ${legacy_target}/:splat 301
+/helm-chart/latest/* ${legacy_target}/:splat 301
+/controller/latest ${legacy_target}/ 301
+/helm-chart/latest ${legacy_target}/ 301
 /controller/ /docs/ 301
 /helm-chart/ /docs/ 301
-REDIR
+REDIRECTS
 else
-  deploy_doc_site "controller" "${MAIN_REPO}/docs/controller"
-  deploy_doc_site "helm-chart" "${MAIN_REPO}/charts/haptic"
+  deploy_doc_site controller "$MAIN_REPO/docs/controller"
+  deploy_doc_site helm-chart "$MAIN_REPO/charts/haptic"
 fi
 
-# Publish the browser playground bundle (fetched from the haptic build artifact).
-# Non-fatal: a playground hiccup must never block the docs deploy (and also disables
-# set -e inside the function so a partial failure returns cleanly).
-deploy_playground || echo "WARNING: playground publish step failed (non-fatal); docs unaffected"
-
-# Copy shared assets (referenced by every site via absolute /shared/... URLs).
-# Copy EVERYTHING in docs/shared/ — a hand-maintained whitelist here silently
-# dropped config-highlight.bundle.js (playground-embed.js dynamically imports it,
-# so its absence 404s at runtime with no build error and the docs fall back to
-# plain-YAML highlighting). Publishing the whole dir kills that drift class.
-mkdir -p "${PUBLIC_DIR}/shared"
-cp -a "${MAIN_REPO}/docs/shared/." "${PUBLIC_DIR}/shared/"
-# The embed highlighter is imported at runtime only — a missing file is invisible
-# to the build, so assert it made it into the site.
-if [ -f "${MAIN_REPO}/docs/shared/config-highlight.bundle.js" ] && [ ! -f "${PUBLIC_DIR}/shared/config-highlight.bundle.js" ]; then
-  echo "ERROR: config-highlight.bundle.js missing from ${PUBLIC_DIR}/shared" >&2
-  exit 1
-fi
-
-echo ""
-echo "=== Deployment complete ==="
-if [ "$MERGED_DOCS" = true ]; then
-  echo "Docs versions.json:"
-  cat "${PUBLIC_DIR}/docs/versions.json"
+if [ "$MODE" = preview ]; then
+  echo "Preview kept the production playground unchanged"
 else
-  echo "Controller versions.json:"
-  cat "${PUBLIC_DIR}/controller/versions.json"
-  echo ""
-  echo "Helm-chart versions.json:"
-  cat "${PUBLIC_DIR}/helm-chart/versions.json"
+  if [ "$VERSION" = dev ]; then
+    replace_moving_dir "$playground_source" "$PUBLIC_DIR/playground/dev"
+  else
+    publish_version_dir "$playground_source" "$PUBLIC_DIR/playground/$VERSION" index.html
+  fi
+  update_playground_versions
 fi
+
+echo "Deployed $MODE docs $VERSION from $SOURCE_COMMIT (pipeline $SOURCE_PIPELINE, job $SOURCE_JOB)"

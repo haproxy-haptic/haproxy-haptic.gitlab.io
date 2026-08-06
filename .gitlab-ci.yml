@@ -1,74 +1,65 @@
+---
 variables:
   MAIN_REPO: "https://gitlab.com/haproxy-haptic/haptic.git"
+  PYTHON_DOCS_IMAGE: >-
+    registry.gitlab.com/haproxy-haptic/haptic/ci/python-docs:latest@sha256:f98c072e0ce50f2d0b282e5d644e8d4ed371977eb40ba53a51c41b8aeca48ad5
 
-pages:
-  stage: deploy
-  image: python:3.14-slim
-  tags:
-    - saas-linux-small-amd64
-  before_script:
-    # Pin mkdocs<2 to avoid incompatibility with mkdocs-material
-    # (see https://squidfunk.github.io/mkdocs-material/blog/2026/02/18/mkdocs-2.0/)
-    - pip install --no-cache-dir "mkdocs>=1.6,<2" mkdocs-material
-    - apt-get update && apt-get install -y --no-install-recommends git jq curl unzip
-  script:
-    # Use DOC_VERSION from trigger, default to "dev" for regular builds
-    - VERSION="${DOC_VERSION:-dev}"
-    - echo "Building docs version ${VERSION}"
-
-    # Download existing versions.json to temp location (mkdocs cleans public dir during build)
-    - |
-      echo "Downloading existing versions.json files..."
-      mkdir -p /tmp/versions-backup
-      for prefix in controller helm-chart; do
-        if curl -sSf "https://haproxy-haptic.org/${prefix}/versions.json" -o "/tmp/versions-backup/${prefix}-versions.json" 2>/dev/null; then
-          echo "  Downloaded ${prefix}/versions.json:"
-          cat "/tmp/versions-backup/${prefix}-versions.json"
-          echo ""
-        else
-          echo "  No existing ${prefix}/versions.json found"
-        fi
-      done
-      export VERSIONS_BACKUP_DIR="/tmp/versions-backup"
-
-    # Download existing pages artifact to preserve all version directories
-    - |
-      echo "Downloading existing pages artifact..."
-      if curl -sSf --location --output pages-artifact.zip \
-          "https://gitlab.com/api/v4/projects/${CI_PROJECT_ID}/jobs/artifacts/main/download?job=pages" 2>/dev/null; then
-        unzip -q -o pages-artifact.zip
-        rm pages-artifact.zip
-        echo "Restored existing site content:"
-        ls -la public/ || true
-      else
-        echo "No existing artifact found, starting fresh"
-        mkdir -p public
-      fi
-
-    # Clone at specific version for releases, main branch for dev
-    - |
-      if [ "$VERSION" = "dev" ]; then
-        echo "Cloning main branch for dev docs..."
-        git clone --depth 1 ${MAIN_REPO} main-repo
-      else
-        echo "Cloning tag ${VERSION} for release docs..."
-        git clone --depth 1 --branch "${VERSION}" ${MAIN_REPO} main-repo
-      fi
-    - ./scripts/deploy-docs.sh "${VERSION}" ./main-repo ./public
-  artifacts:
-    paths:
-      - public
-  rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-    - if: $CI_PIPELINE_SOURCE == "pipeline"  # Triggered from main project
+stages:
+  - test
+  - deploy
 
 test:
   stage: test
-  image: python:3.14-slim
+  image: ${PYTHON_DOCS_IMAGE}
   tags:
     - saas-linux-small-amd64
   script:
-    - pip install --no-cache-dir "mkdocs>=1.6,<2" mkdocs-material
-    - mkdocs --version
+    - bash -n scripts/deploy-docs.sh scripts/test-deploy-docs.sh
+    - bash scripts/test-deploy-docs.sh
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: >-
+        $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH &&
+        $CI_PIPELINE_SOURCE == "push"
+
+pages:
+  stage: deploy
+  image: ${PYTHON_DOCS_IMAGE}
+  tags:
+    - saas-linux-small-amd64
+  resource_group: pages-publication
+  script:
+    - VERSION="${DOC_VERSION:?DOC_VERSION is required}"
+    - >-
+      SOURCE_COMMIT="${HAPTIC_RELEASE_COMMIT_SHA:?
+      HAPTIC_RELEASE_COMMIT_SHA is required}"
+    - echo "Publishing ${VERSION} from ${SOURCE_COMMIT}"
+    - |
+      artifact_url="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}"
+      artifact_url="${artifact_url}/jobs/artifacts/main/download?job=pages"
+      curl -sSfL --output pages-artifact.zip \
+        --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+        "$artifact_url" ||
+        {
+          echo "The previous Pages artifact is required" >&2
+          exit 1
+        }
+      unzip -q pages-artifact.zip
+      rm pages-artifact.zip
+      if [ ! -d public ]; then
+        echo "The previous Pages artifact has no public directory" >&2
+        exit 1
+      fi
+    - |
+      git init -q main-repo
+      git -C main-repo remote add origin "$MAIN_REPO"
+      git -C main-repo fetch --depth 1 origin "$SOURCE_COMMIT"
+      git -C main-repo checkout -q --detach FETCH_HEAD
+      [ "$(git -C main-repo rev-parse HEAD)" = "$SOURCE_COMMIT" ]
+    - ./scripts/deploy-docs.sh "$VERSION" ./main-repo ./public
+  artifacts:
+    paths:
+      - public
+    expire_in: never
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "pipeline"
