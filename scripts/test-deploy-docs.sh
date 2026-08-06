@@ -64,12 +64,7 @@ if [[ "$url" == */pipelines/"$FAKE_PIPELINE"/jobs* ]]; then
     jq -n '[range(0; 100) | {id:., name:"another-job", status:"success"}]'
     exit 0
   fi
-  printf '[{"id":%s,"name":"%s","status":"success"}]\n' \
-    "$FAKE_JOB" "${FAKE_JOB_NAME:-build-playground-wasm}"
-  exit 0
-fi
-if [[ "$url" == */jobs/"$FAKE_JOB" ]]; then
-  printf '{"id":%s,"name":"%s","status":"success","ref":"%s","commit":{"id":"%s"},"pipeline":{"id":%s}}\n' \
+  printf '[{"id":%s,"name":"%s","status":"success","ref":"%s","commit":{"id":"%s"},"pipeline":{"id":%s}}]\n' \
     "$FAKE_JOB" "${FAKE_JOB_NAME:-build-playground-wasm}" "$FAKE_REF" \
     "${FAKE_JOB_COMMIT:-$FAKE_COMMIT}" "$FAKE_PIPELINE"
   exit 0

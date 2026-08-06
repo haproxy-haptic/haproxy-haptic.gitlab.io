@@ -48,3 +48,8 @@ pages:
     expire_in: never
   rules:
     - if: $CI_PIPELINE_SOURCE == "pipeline"
+    - if: >-
+        $CI_PIPELINE_SOURCE == "api" &&
+        $CI_COMMIT_TAG =~ /^pages-publisher-[0-9a-f]{40}$/ &&
+        $PAGES_BOOTSTRAP_JOB_ID &&
+        $PAGES_BOOTSTRAP_ARTIFACT_SHA256
