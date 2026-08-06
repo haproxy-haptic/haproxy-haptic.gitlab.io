@@ -265,22 +265,22 @@ if [ "$MODE" = publish ]; then
     exit 1
   }
   page=1
-  job_ids=()
+  job_records=()
   while true; do
     jobs_json=$(gl_get "$api/pipelines/$SOURCE_PIPELINE/jobs?include_retried=false&per_page=100&page=$page")
-    mapfile -t page_job_ids < <(jq -r --arg name "$SOURCE_JOB_NAME" \
-      '.[] | select(.name == $name and .status == "success") | .id' <<<"$jobs_json")
-    job_ids+=("${page_job_ids[@]}")
+    mapfile -t page_job_records < <(jq -c --arg name "$SOURCE_JOB_NAME" \
+      '.[] | select(.name == $name and .status == "success")' <<<"$jobs_json")
+    job_records+=("${page_job_records[@]}")
     [ "$(jq 'length' <<<"$jobs_json")" -eq 100 ] || break
     page=$((page + 1))
     [ "$page" -le 100 ] || { echo "source pipeline job list exceeds 10000 entries" >&2; exit 1; }
   done
-  [ "${#job_ids[@]}" -eq 1 ] || {
+  [ "${#job_records[@]}" -eq 1 ] || {
     echo "pipeline $SOURCE_PIPELINE does not have exactly one successful $SOURCE_JOB_NAME job" >&2
     exit 1
   }
-  SOURCE_JOB=${job_ids[0]}
-  job_json=$(gl_get "$api/jobs/$SOURCE_JOB")
+  job_json=${job_records[0]}
+  SOURCE_JOB=$(jq -r '.id' <<<"$job_json")
   jq -e \
     --arg name "$SOURCE_JOB_NAME" \
     --arg status success \
