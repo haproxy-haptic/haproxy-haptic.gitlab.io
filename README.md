@@ -10,7 +10,15 @@ This repository hosts the CI pipeline that builds and publishes versioned MkDocs
 
 The pipeline runs in two scenarios:
 
-- **Triggered by the main haptic repo** — when a release is tagged or docs are updated, the haptic pipeline triggers this one with a `DOC_VERSION` variable (e.g. `v1.2.0`). The pipeline clones the haptic repo at that tag, builds the MkDocs site, and publishes it under a versioned path.
-- **Direct push to `main`** — builds `dev` docs from the latest haptic `main` branch.
+- **Triggered by the main haptic repo** — the source pipeline supplies the documentation version, exact commit, exact pipeline, and playground job name. The publisher resolves and checks that pipeline's successful job before it changes the Pages artifact.
+- **Direct push or merge request** — runs the deterministic publisher tests without changing the live site.
 
-Existing published versions are preserved across builds by restoring the previous Pages artifact before each new build.
+The Pages job requires the previous artifact and preserves every versioned directory. A missing artifact fails the job instead of replacing the site with one version. Stable `latest` and playground `current` select the highest published semantic version, so retrying an older release can't move either alias backward.
+
+Each published documentation and playground directory contains `release-identity.json` with the source version, commit, pipeline, and playground job. Release directories are immutable; an exact retry is a no-op, and a conflicting retry fails.
+
+Run the publisher tests with:
+
+```bash
+make test
+```
