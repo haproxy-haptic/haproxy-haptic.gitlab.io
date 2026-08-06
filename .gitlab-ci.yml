@@ -36,6 +36,11 @@ pages:
     - echo "Publishing ${VERSION} from ${SOURCE_COMMIT}"
     - ./scripts/restore-pages-artifact.sh ./public
     - |
+      if [ "${PAGES_LINEAGE_SEED_ONLY:-false}" = true ]; then
+        echo "Seeded the publisher lineage without changing site content"
+        exit 0
+      fi
+    - |
       git init -q main-repo
       git -C main-repo remote add origin "$MAIN_REPO"
       git -C main-repo fetch --depth 1 origin "$SOURCE_COMMIT"
@@ -51,5 +56,6 @@ pages:
     - if: >-
         $CI_PIPELINE_SOURCE == "api" &&
         $CI_COMMIT_TAG =~ /^pages-publisher-[0-9a-f]{40}$/ &&
+        $PAGES_LINEAGE_SEED_ONLY == "true" &&
         $PAGES_BOOTSTRAP_JOB_ID &&
         $PAGES_BOOTSTRAP_ARTIFACT_SHA256
