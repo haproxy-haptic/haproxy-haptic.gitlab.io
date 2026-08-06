@@ -13,7 +13,7 @@ The pipeline runs in two scenarios:
 - **Triggered by the main haptic repo** — the source pipeline supplies the documentation version, exact commit, exact pipeline, and playground job name. The publisher resolves and checks that pipeline's successful job before it changes the Pages artifact.
 - **Direct push or merge request** — runs the deterministic publisher tests without changing the live site.
 
-The Pages job requires the previous artifact and preserves every versioned directory. A missing artifact fails the job instead of replacing the site with one version. Stable `latest` and playground `current` select the highest published semantic version, so retrying an older release can't move either alias backward.
+The Pages job restores the newest artifact produced by a protected, commit-named publisher tag and preserves every versioned directory. The existing `main` artifact is accepted only before the first tagged publisher succeeds. A missing artifact fails the job instead of replacing the site with one version. Stable `latest` and playground `current` select the highest published semantic version, so retrying an older release can't move either alias backward.
 
 Each published documentation and playground directory contains `release-identity.json` with the source version, commit, pipeline, and playground job. Release directories are immutable; an exact retry is a no-op, and a conflicting retry fails.
 

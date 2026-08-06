@@ -34,22 +34,7 @@ pages:
       SOURCE_COMMIT="${HAPTIC_RELEASE_COMMIT_SHA:?
       HAPTIC_RELEASE_COMMIT_SHA is required}"
     - echo "Publishing ${VERSION} from ${SOURCE_COMMIT}"
-    - |
-      artifact_url="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}"
-      artifact_url="${artifact_url}/jobs/artifacts/main/download?job=pages"
-      curl -sSfL --output pages-artifact.zip \
-        --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
-        "$artifact_url" ||
-        {
-          echo "The previous Pages artifact is required" >&2
-          exit 1
-        }
-      unzip -q pages-artifact.zip
-      rm pages-artifact.zip
-      if [ ! -d public ]; then
-        echo "The previous Pages artifact has no public directory" >&2
-        exit 1
-      fi
+    - ./scripts/restore-pages-artifact.sh ./public
     - |
       git init -q main-repo
       git -C main-repo remote add origin "$MAIN_REPO"
