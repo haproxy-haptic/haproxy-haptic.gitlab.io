@@ -6,6 +6,10 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 test_root=$(mktemp -d)
 trap 'rm -rf -- "$test_root"' EXIT
 
+publisher_root="$test_root/publisher"
+mkdir -p "$publisher_root/scripts"
+cp "$repo_root/scripts/"{deploy-docs.sh,semver-order.py,apply-playground-ui-patches.py} "$publisher_root/scripts/"
+
 ordered=$(printf '%s\n' 0.9.0 0.10.0 1.0.0-alpha.2 1.0.0-alpha.10 1.0.0-rc.1 1.0.0 |
   "$repo_root/scripts/semver-order.py")
 expected=$'1.0.0\n1.0.0-rc.1\n1.0.0-alpha.10\n1.0.0-alpha.2\n0.10.0\n0.9.0'
@@ -118,7 +122,7 @@ deploy() {
     HAPTIC_RELEASE_COMMIT_SHA="$source_commit" \
     HAPTIC_RELEASE_PIPELINE_ID="$pipeline" \
     HAPTIC_RELEASE_PLAYGROUND_JOB_NAME=build-playground-wasm \
-    "$repo_root/scripts/deploy-docs.sh" "$version" "$test_root/main-repo" "$public"
+    "$publisher_root/scripts/deploy-docs.sh" "$version" "$test_root/main-repo" "$public"
 }
 
 snapshot() {
@@ -219,4 +223,36 @@ jq -e --arg commit "$source_commit" \
   '.version == "0.3.0" and .commit == $commit and .pipeline == "301" and .job == "3001"' \
   "$public/playground/0.3.0/release-identity.json" >/dev/null
 
-echo "Pages deployment provenance, monotonic aliases, preservation, and retries passed"
+python3 - "$public/playground/0.2.0" "$publisher_root/playground-ui-patches" <<'PY'
+import hashlib
+import json
+from pathlib import Path
+import sys
+
+bundle, patches = map(Path, sys.argv[1:])
+patches.mkdir()
+old = (bundle / 'index.html').read_text()
+new = old.replace('</html>', '<!-- UI fix --></html>')
+manifest = {
+    'release': json.loads((bundle / 'release-identity.json').read_text()),
+    'revision': 'fixture-1',
+    'source': {'commit': 'b' * 40},
+    'release_files': {p.relative_to(bundle).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+                      for p in bundle.rglob('*') if p.is_file()},
+    'files': {'index.html': {'sha256': hashlib.sha256(new.encode()).hexdigest(),
+                            'replacements': [{'old': old, 'new': new}]}},
+}
+(patches / '0.2.0.json').write_text(json.dumps(manifest))
+PY
+make_artifact 0.2.0 200 2000
+deploy "$public" 0.2.0 200 2000 >/dev/null
+[ -s "$public/playground/0.2.0/ui-revision.json" ]
+patched_release=$(snapshot "$public/playground/0.2.0")
+deploy "$public" 0.2.0 200 2000 >/dev/null
+[ "$patched_release" = "$(snapshot "$public/playground/0.2.0")" ]
+make_artifact dev 700 7000
+deploy "$public" dev 700 7000 >/dev/null
+[ "$patched_release" = "$(snapshot "$public/playground/0.2.0")" ]
+[ "$(jq -r .current "$public/playground/versions.json")" = 0.3.0 ]
+
+echo "Pages provenance, aliases, preservation, retries, and UI corrections passed"

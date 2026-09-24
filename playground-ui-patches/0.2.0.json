@@ -1,0 +1,77 @@
+{
+  "files": {
+    "index.html": {
+      "replacements": [
+        {
+          "new": "{ id: 'starter', label: 'Minimal starter', config: './starter.config.yaml', resources: './starter.resources.yaml', schemas: './schemas.json' }",
+          "old": "{ id: 'starter', label: 'Minimal starter', config: './starter.config.yaml', resources: './starter.resources.yaml', schemas: null }"
+        },
+        {
+          "new": "      const preset = st.p ? PRESETS.find((p) => p.id === st.p) : null;\n      schemasUrl = st.s || preset?.schemas || null;\n      schemas = schemasUrl ? await fetchText(schemasUrl).catch(() => '') : '';",
+          "old": "      schemasUrl = st.s || null;\n      schemas = schemasUrl ? await fetchText(schemasUrl).catch(() => '') : '';\n      const preset = st.p ? PRESETS.find((p) => p.id === st.p) : null;"
+        }
+      ],
+      "sha256": "6804b04ae55cd7bd7a9fc3e596874d3e14fcd771d32db3e59299dea8c86aea70"
+    }
+  },
+  "release": {
+    "commit": "bc80292f31f7df28ee35c8f7b31a0109184caf3b",
+    "job": "16719850418",
+    "pipeline": "2880161822",
+    "version": "0.2.0"
+  },
+  "release_files": {
+    "crd.config.yaml": "840dee0496e70b703fcdc41a1ace2a20ef21d3644cb6cad9b9ba95c67a51b746",
+    "crd.resources.yaml": "3ab83cf39c428d7b26ad8b8b9343b8a2b1a3749af3914e1b04c88fe9c5b7dd3e",
+    "editor.js": "128e1734eacfdb43d4c1d9a5a4b44735088714cc2c6c162b97568cf29f8f61f5",
+    "highlight/config-highlight.bundle.js": "3ace49c1f047959a266413299be4bfecd3cd980942a7c263f83c62c5c9d4e459",
+    "highlight/config-highlight.bundle.js.br": "5a68226727783a3965b78e0192ec2af2cbed22a997e13c0043a5a6f63dfe625a",
+    "highlight/config-highlight.bundle.js.gz": "163bb58cb1e3371afd361e3689b388ee48c3bb86f1f9ebeb9ecd8e0c42ca5b82",
+    "index.html": "3645ec61ecab0da48c0eb37b452018b9d1a491f2dd8e5ae51a14e2a6f6e07943",
+    "migration-assets.mjs": "d0e0b1ff294b7bb621ded44123e737d3b526575c2b49abb332995eb06c852ec2",
+    "migration/haproxy-ingress.json": "4b71f708eec6f6ce0e38e830372aa4b315a04c814908cbb52bf94dd19f1801cb",
+    "migration/haproxytech.json": "b0ca62719429928b1865a21bea9e5c72f399d4d1c80abb19934020d803f05cdd",
+    "migration/haptic-annotations.json": "2456b0f193f70e01e78e3e9b2701e57b551e70626d08c872da9575ff39ccd34f",
+    "migration/ingress-nginx.json": "fbbe05f29c5a2b9ea8c183932dcf1f02d3016a6059b52ab606ca6b5406070552",
+    "migration/presets.json": "f577470d79b4236262305058ff528d148dbd9a676d2018c07cd3f961d0bde6bc",
+    "playground.wasm": "679ad23213be958ee9c75d97261eeeecf49a8280b151ddb53be53f9b0ba2f36b",
+    "playground.wasm.br": "30f69bfb3c1ea9534a745b42b4f22801fce758cefafd1f6cfbc68d485ac9c0c8",
+    "playground.wasm.gz": "123610ee396553647acb55e73721cbbe8ae6c82948c8d3f6907b15efb081372e",
+    "playground.worker.js": "e9f31a77ff9474e739d3057422fdce6929261f3f05824cbc2d399f7dfa336e7e",
+    "presets/all.config.yaml": "7ab8ebfad51b3f62427a2605d3191243ac73e8c45571dfc2ab784eede0526e17",
+    "presets/all.resources.yaml": "81b443cbcdadbce4935ca398c33d1486136d6b9b6d926bdb07b8cd032716a53b",
+    "presets/extend.config.yaml": "d69af3ed107f1eb012e4b01a258ef5232f11830e15bc4943138fa9fa1ff3e6aa",
+    "presets/extend.resources.yaml": "41bc1ee63e0cc6b15bc5049117adaa58a02f1ecd9f3d4988dfc803b9a1cb58c9",
+    "presets/gateway.config.yaml": "528f98671c9b8d908761a967e21e570ad7911e4412198f30a9c69e535a5ce944",
+    "presets/gateway.resources.yaml": "b9f91948e19f391b4a1c36ca83b0cf2d71ca19acec50b8652e169a950978e575",
+    "presets/haproxy-ingress.config.yaml": "6b6b10a70863083496467227bbd5b76d8575f7cbfa6f2eb15a1834c5f2ddc808",
+    "presets/haproxy-ingress.resources.yaml": "9107297b91aab7e16ec67aeb811d8b59a1e25f5a159369efa8f65fb863ac26fa",
+    "presets/haproxytech.config.yaml": "613f2c44eeceddb888c49cec50437136ddabda46657ee2e6754deb0c1cff313e",
+    "presets/haproxytech.resources.yaml": "e7ee7a5f02263ddf2863b8fa987fac2f144f2f261771aeea58e80c1ef15f3108",
+    "presets/haptic-annotations.config.yaml": "4252eef253b8665c64babe42b19e56c2d24a37c261306600b97e81f9f9f477cc",
+    "presets/haptic-annotations.resources.yaml": "9f3519a627f0ebd4c90b99a896d26c2ae5b1a580b577490ad6fcd0b785e4579a",
+    "presets/ingress.config.yaml": "2532cbdaae1d973db1836a44a901e8f07eafe09238b9a935ac92c9bbbea195ba",
+    "presets/ingress.resources.yaml": "ddf97e0a6f2114f4b0641ed945e8eded342df656f93fd1494646087e7adb7395",
+    "presets/nginx-ingress.config.yaml": "89d45203ceac7f379fbdf0d27510619346befcf29855d2adf2cdc751bb44b2dc",
+    "presets/nginx-ingress.resources.yaml": "4e53ecc5ab6b59e11c673a7e958247d8be49f08e791d81d4ed3c1204316d1470",
+    "release-identity.json": "726eb16b91356ca7b75923006ea8c1a745a3b236314a9f854a4b62844812df80",
+    "schemas.json": "37254c3f216c08c9f81f1764e99b7423e3572d6e8f099be3d35f41500bd90e11",
+    "schemas.json.br": "be7b3916465b689d6c79d2f3fe6d827cd340bf1686e305c60f05a18aee443657",
+    "schemas.json.gz": "786c8bc456bda9f192044263595475a045db375a4346487e66e2c0924d47d44f",
+    "starter.config.yaml": "5827f753dd6576855ca947b796dd59d0c9a9ba3d8580eb1a84d70bd22cb6a9ab",
+    "starter.resources.yaml": "7ebaf6de31cc454f56cd03f98dd137dc9a8932df5f7d9150130ca59dd955899e",
+    "tryout-template.sh": "a908612138d13abe0e1352972b3a062bf6bc6a297b978b72091906e7a9c7c48d",
+    "tryout.js": "824a7c31447353bbca0e39dfb9cfde2a22523e349202ce892075bc63176bab37",
+    "vendor/README.md": "eb8ca68b905790e8c6e57a5d72e2c7332a94a910677057d778124f30c762aa84",
+    "vendor/codemirror.js": "39c6d8dffc691dc1882575425203e46a59323c4ffea492bde06039b35c4a8acd",
+    "vendor/codemirror.js.br": "08da460cf1ac03ad8749db1887ec3c69171ab8f6ada979308f18a307786033b3",
+    "vendor/codemirror.js.gz": "d8a903604f9de7717ecad700e523a99f465f9bc14b1db986e360610f58ff241a",
+    "wasm_exec.js": "0c949f4996f9a89698e4b5c586de32249c3b69b7baadb64d220073cc04acba14"
+  },
+  "revision": "starter-schemas-1",
+  "source": {
+    "commit": "90c083f1553cf587632a201d5b370d852e4d5db5",
+    "path": "cmd/playground/web/index.html",
+    "project": "haproxy-haptic/haptic"
+  }
+}

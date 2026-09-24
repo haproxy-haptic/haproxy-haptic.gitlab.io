@@ -377,6 +377,7 @@ else
     publish_version_dir "$playground_source" "$PUBLIC_DIR/playground/$VERSION" index.html
   fi
   update_playground_versions
+  python3 "$SCRIPT_DIR/apply-playground-ui-patches.py" "$PUBLIC_DIR"
 fi
 
 echo "Deployed $MODE docs $VERSION from $SOURCE_COMMIT (pipeline $SOURCE_PIPELINE, job $SOURCE_JOB)"

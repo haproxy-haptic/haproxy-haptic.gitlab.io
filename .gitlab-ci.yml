@@ -14,13 +14,16 @@ test:
   tags:
     - saas-linux-small-amd64
   script:
-    - bash -n scripts/deploy-docs.sh scripts/test-deploy-docs.sh
-    - bash scripts/test-deploy-docs.sh
+    - bash scripts/test.sh
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: >-
         $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH &&
         $CI_PIPELINE_SOURCE == "push"
+    - if: >-
+        $CI_PIPELINE_SOURCE == "api" &&
+        $CI_COMMIT_TAG =~ /^pages-publisher-[0-9a-f]{40}$/ &&
+        $PLAYGROUND_UI_HOTFIX_VERSION
 
 pages:
   stage: deploy
@@ -29,12 +32,17 @@ pages:
     - saas-linux-small-amd64
   resource_group: pages-publication
   script:
+    - ./scripts/restore-pages-artifact.sh ./public
+    - |
+      if [ -n "${PLAYGROUND_UI_HOTFIX_VERSION:-}" ]; then
+        python3 scripts/apply-playground-ui-patches.py ./public --require-version "$PLAYGROUND_UI_HOTFIX_VERSION"
+        exit 0
+      fi
     - VERSION="${DOC_VERSION:?DOC_VERSION is required}"
     - >-
       SOURCE_COMMIT="${HAPTIC_RELEASE_COMMIT_SHA:?
       HAPTIC_RELEASE_COMMIT_SHA is required}"
     - echo "Publishing ${VERSION} from ${SOURCE_COMMIT}"
-    - ./scripts/restore-pages-artifact.sh ./public
     - |
       if [ "${PAGES_LINEAGE_SEED_ONLY:-false}" = true ]; then
         echo "Seeded the publisher lineage without changing site content"
@@ -53,6 +61,10 @@ pages:
     expire_in: never
   rules:
     - if: $CI_PIPELINE_SOURCE == "pipeline"
+    - if: >-
+        $CI_PIPELINE_SOURCE == "api" &&
+        $CI_COMMIT_TAG =~ /^pages-publisher-[0-9a-f]{40}$/ &&
+        $PLAYGROUND_UI_HOTFIX_VERSION
     - if: >-
         $CI_PIPELINE_SOURCE == "api" &&
         $CI_COMMIT_TAG =~ /^pages-publisher-[0-9a-f]{40}$/ &&
