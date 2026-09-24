@@ -8,7 +8,7 @@ trap 'rm -rf -- "$test_root"' EXIT
 
 publisher_root="$test_root/publisher"
 mkdir -p "$publisher_root/scripts"
-cp "$repo_root/scripts/"{deploy-docs.sh,semver-order.py,apply-playground-ui-patches.py} "$publisher_root/scripts/"
+cp "$repo_root/scripts/"{deploy-docs.sh,semver-order.py,site_versions.py,apply-playground-ui-patches.py} "$publisher_root/scripts/"
 
 ordered=$(printf '%s\n' 0.9.0 0.10.0 1.0.0-alpha.2 1.0.0-alpha.10 1.0.0-rc.1 1.0.0 |
   "$repo_root/scripts/semver-order.py")
@@ -158,10 +158,31 @@ make_artifact 0.3.0 301 3001
 deploy "$public" 0.3.0 301 3001 >/dev/null
 [ "$(readlink "$public/docs/latest")" = 0.3.0 ]
 [ "$(jq -r .current "$public/playground/versions.json")" = 0.3.0 ]
-for version in 0.2.0 0.3.0-rc.1 0.3.0; do
+for version in 0.2.0 0.3.0; do
   [ -d "$public/docs/$version" ]
   [ -d "$public/playground/$version" ]
 done
+
+[ ! -e "$public/docs/0.3.0-rc.1" ]
+[ ! -e "$public/playground/0.3.0-rc.1" ]
+
+before_retired_retry=$(snapshot "$public")
+make_artifact 0.3.0-rc.1 300 3000
+deploy "$public" 0.3.0-rc.1 300 3000 >/dev/null
+[ "$before_retired_retry" = "$(snapshot "$public")" ]
+
+mkdir -p "$public/controller/0.1.0" "$public/helm-chart/v0.1.0"
+printf 'original controller docs\n' > "$public/controller/0.1.0/index.html"
+printf 'original chart docs\n' > "$public/helm-chart/v0.1.0/index.html"
+legacy_controller=$(snapshot "$public/controller/0.1.0")
+legacy_chart=$(snapshot "$public/helm-chart/v0.1.0")
+make_artifact 0.3.0 301 3001
+deploy "$public" 0.3.0 301 3001 >/dev/null
+[ "$legacy_controller" = "$(snapshot "$public/controller/0.1.0")" ]
+[ "$legacy_chart" = "$(snapshot "$public/helm-chart/v0.1.0")" ]
+jq -e 'map(.version) == ["0.3.0", "0.2.0", "0.1.0", "dev"]' "$public/docs/versions.json" >/dev/null
+[ -s "$public/docs/0.1.0/index.html" ]
+[ ! -e "$public/playground/0.1.0" ]
 
 before_retry=$(snapshot "$public")
 make_artifact 0.2.0 200 2000

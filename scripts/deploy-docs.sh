@@ -132,84 +132,6 @@ collect_versions() {
     "$SCRIPT_DIR/semver-order.py"
 }
 
-update_docs_versions() {
-  local prefix=$1
-  local versions_file="$PUBLIC_DIR/$prefix/versions.json"
-  local latest=
-  local -a releases=()
-  mapfile -t releases < <(collect_versions "$prefix")
-
-  local release
-  for release in "${releases[@]}"; do
-    if [[ "$release" != *-* ]]; then
-      latest=$release
-      break
-    fi
-  done
-
-  mkdir -p "$PUBLIC_DIR/$prefix"
-  jq -n --args '$ARGS.positional | map({version:., title:., aliases:[]})' \
-    "${releases[@]}" > "$versions_file"
-  if [ -d "$PUBLIC_DIR/$prefix/dev" ]; then
-    jq '. + [{version:"dev", title:"dev", aliases:[]}]' "$versions_file" > "$tmp_root/docs-versions.json"
-    mv "$tmp_root/docs-versions.json" "$versions_file"
-  fi
-  if [ -n "$latest" ]; then
-    [ -d "$PUBLIC_DIR/$prefix/$latest" ] || { echo "missing latest target: $prefix/$latest" >&2; return 1; }
-    jq --arg latest "$latest" 'map(.aliases = (if .version == $latest then ["latest"] else [] end))' \
-      "$versions_file" > "$tmp_root/docs-versions.json"
-    mv "$tmp_root/docs-versions.json" "$versions_file"
-    if [ -e "$PUBLIC_DIR/$prefix/latest" ] && [ ! -L "$PUBLIC_DIR/$prefix/latest" ]; then
-      echo "$prefix/latest is not a symlink" >&2
-      return 1
-    fi
-    ln -sfn "$latest" "$PUBLIC_DIR/$prefix/latest"
-  fi
-}
-
-update_playground_versions() {
-  local versions_file="$PUBLIC_DIR/playground/versions.json"
-  local current=
-  local -a releases=()
-  mapfile -t releases < <(collect_versions playground)
-
-  local release
-  for release in "${releases[@]}"; do
-    if [[ "$release" != *-* ]]; then
-      current=$release
-      break
-    fi
-  done
-  if [ -z "$current" ] && [ "${#releases[@]}" -gt 0 ]; then
-    current=${releases[0]}
-  fi
-
-  jq -n --args '$ARGS.positional | map({version:., stable:(contains("-") | not)})' \
-    "${releases[@]}" > "$tmp_root/playground-releases.json"
-  if [ -d "$PUBLIC_DIR/playground/dev" ]; then
-    jq '. + [{version:"dev", stable:false}]' "$tmp_root/playground-releases.json" > "$tmp_root/playground-with-dev.json"
-  else
-    cp "$tmp_root/playground-releases.json" "$tmp_root/playground-with-dev.json"
-  fi
-  if [ -n "$current" ]; then
-    jq --arg current "$current" '{current:$current, versions:.}' \
-      "$tmp_root/playground-with-dev.json" > "$versions_file"
-  else
-    jq '{versions:.}' "$tmp_root/playground-with-dev.json" > "$versions_file"
-  fi
-
-  local landing=${current:-dev}
-  [ -d "$PUBLIC_DIR/playground/$landing" ] || { echo "missing playground landing target: $landing" >&2; return 1; }
-  cat > "$PUBLIC_DIR/playground/index.html" <<HTML
-<!doctype html><html lang="en"><head><meta charset="utf-8">
-<title>HAPTIC Playground</title>
-<script>location.replace('./${landing}/' + location.search + location.hash)</script>
-<meta http-equiv="refresh" content="0; url=./${landing}/">
-<link rel="canonical" href="./${landing}/"></head>
-<body><p><a href="./${landing}/">HAPTIC Playground &rarr;</a></p></body></html>
-HTML
-}
-
 deploy_doc_site() {
   local name=$1
   local source=$2
@@ -225,7 +147,6 @@ deploy_doc_site() {
       return 1
     }
     echo "Keeping existing immutable $destination"
-    update_docs_versions "$name"
     return 0
   fi
 
@@ -245,7 +166,6 @@ deploy_doc_site() {
   else
     publish_version_dir "$build_dir" "$destination" index.html
   fi
-  update_docs_versions "$name"
 }
 
 repo_commit=$(git -C "$MAIN_REPO" rev-parse HEAD)
@@ -376,7 +296,7 @@ else
   else
     publish_version_dir "$playground_source" "$PUBLIC_DIR/playground/$VERSION" index.html
   fi
-  update_playground_versions
+  python3 "$SCRIPT_DIR/site_versions.py" "$PUBLIC_DIR"
   python3 "$SCRIPT_DIR/apply-playground-ui-patches.py" "$PUBLIC_DIR"
 fi
 

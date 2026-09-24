@@ -23,7 +23,7 @@ test:
     - if: >-
         $CI_PIPELINE_SOURCE == "api" &&
         $CI_COMMIT_TAG =~ /^pages-publisher-[0-9a-f]{40}$/ &&
-        $PLAYGROUND_UI_HOTFIX_VERSION
+        ($PLAYGROUND_UI_HOTFIX_VERSION || $PAGES_REFRESH_VERSIONS == "true")
 
 pages:
   stage: deploy
@@ -34,8 +34,13 @@ pages:
   script:
     - ./scripts/restore-pages-artifact.sh ./public
     - |
-      if [ -n "${PLAYGROUND_UI_HOTFIX_VERSION:-}" ]; then
-        python3 scripts/apply-playground-ui-patches.py ./public --require-version "$PLAYGROUND_UI_HOTFIX_VERSION"
+      if [ -n "${PLAYGROUND_UI_HOTFIX_VERSION:-}" ] || [ "${PAGES_REFRESH_VERSIONS:-false}" = true ]; then
+        python3 scripts/site_versions.py ./public
+        patch_args=()
+        if [ -n "${PLAYGROUND_UI_HOTFIX_VERSION:-}" ]; then
+          patch_args=(--require-version "$PLAYGROUND_UI_HOTFIX_VERSION")
+        fi
+        python3 scripts/apply-playground-ui-patches.py ./public "${patch_args[@]}"
         exit 0
       fi
     - VERSION="${DOC_VERSION:?DOC_VERSION is required}"
@@ -64,7 +69,7 @@ pages:
     - if: >-
         $CI_PIPELINE_SOURCE == "api" &&
         $CI_COMMIT_TAG =~ /^pages-publisher-[0-9a-f]{40}$/ &&
-        $PLAYGROUND_UI_HOTFIX_VERSION
+        ($PLAYGROUND_UI_HOTFIX_VERSION || $PAGES_REFRESH_VERSIONS == "true")
     - if: >-
         $CI_PIPELINE_SOURCE == "api" &&
         $CI_COMMIT_TAG =~ /^pages-publisher-[0-9a-f]{40}$/ &&
