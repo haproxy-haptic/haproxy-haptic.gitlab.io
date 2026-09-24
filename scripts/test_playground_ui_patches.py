@@ -125,6 +125,15 @@ class PlaygroundUIPatchesTest(unittest.TestCase):
         (self.bundle / "schemas.json").write_bytes(b"changed")
         self.assert_refused_without_mutation()
 
+    def test_duplicate_replacement_context_is_rejected(self):
+        (self.bundle / "index.html").write_bytes(b"<html>broken broken</html>\n")
+        self.manifest["release_files"] = patches.file_hashes(self.bundle)
+        self.save_manifest()
+        before = patches.file_hashes(self.public)
+        with self.assertRaisesRegex(ValueError, "context is not unique"):
+            self.apply()
+        self.assertEqual(before, patches.file_hashes(self.public))
+
     def test_missing_target_and_unknown_version_are_rejected(self):
         with self.assertRaisesRegex(ValueError, "No published playground"):
             patches.apply(self.public, self.patch_root, "0.3.0")

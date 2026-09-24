@@ -23,6 +23,8 @@ Reviewed manifests in `playground-ui-patches/` can correct a released playground
 
 The publisher writes `ui-revision.json` alongside the unchanged `release-identity.json`. The former identifies the corrected browser interface; the latter identifies the original rendering bundle. Normal deployments verify and preserve these corrections.
 
+Pages replaces the complete site artifact on each publication. A corrupted historical bundle therefore blocks publication: accepting it would republish that corruption along with the new version. Correct the corrupted artifact or manifest before retrying; validation failures are not warnings.
+
 To publish a reviewed correction, run an API pipeline on the protected `pages-publisher-<commit>` tag with `PLAYGROUND_UI_HOTFIX_VERSION` set to the existing release version and `PAGES_ARTIFACT_FALLBACK_REF` set to the current publisher tag. The pipeline runs the publisher tests, restores the existing site, applies the correction, and publishes Pages without rebuilding controller artifacts or documentation. After the first publication, use the new tag as its own fallback and update the HAPTIC publisher pins so subsequent deployments use it.
 
 Run the publisher tests with:
