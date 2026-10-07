@@ -43,12 +43,14 @@ make test
 
 ## Pages size
 
-The publisher shares byte-identical documentation assets through relative links
+The publisher shares byte-identical documentation files through relative links
 to checksum-named files under `shared/documentation-assets`. Original URLs and
-file contents remain unchanged. Playground bundles, release identities, and
+file contents remain unchanged. Version entry pages, playground bundles, release identities, and
 compressed asset families retain their original files. Every publication verifies
-existing shared assets and checks the unpacked site against GitLab.com's 1 GiB
-Pages limit before uploading it.
+existing shared files, removes unreferenced shared copies, and checks the unpacked
+site against GitLab.com's [1000 MiB Pages limit](https://gitlab.com/help/instance_configuration)
+before uploading it. Moving landing pages replace destination links rather than
+overwriting files retained by released documentation.
 
 Unique retained playground bundles still grow with each release. If the size
 check fails after compaction, provide additional asset storage before publishing;

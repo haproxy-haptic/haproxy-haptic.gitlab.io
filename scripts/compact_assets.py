@@ -1,4 +1,4 @@
-"""Share identical documentation assets without changing published URLs or bytes."""
+"""Share identical documentation files without changing published URLs or bytes."""
 
 import argparse
 import collections
@@ -8,8 +8,10 @@ from pathlib import Path
 import sys
 
 
-MAX_PAGES_BYTES = 1024 ** 3
+MAX_PAGES_BYTES = 1000 * 1024 ** 2
 STORE = "shared/documentation-assets"
+DOC_ROOTS = {"docs", "controller", "helm-chart"}
+IDENTITY_FILES = {"release-identity.json", "legacy-documentation.json"}
 
 
 def digest(path):
@@ -21,14 +23,17 @@ def candidates(public):
     for directory, children, files in os.walk(public, followlinks=False):
         base = Path(directory)
         relative = base.relative_to(public)
+        in_docs = len(relative.parts) >= 2 and relative.parts[0] in DOC_ROOTS
         for name in children:
-            if (base / name).is_symlink() and ("assets" in relative.parts or name == "assets"):
+            if (base / name).is_symlink() and (in_docs or "assets" in relative.parts or name == "assets"):
                 raise ValueError(f"Documentation asset directory is a symlink: {base / name}")
         children[:] = [name for name in children if not (base / name).is_symlink()
                        and name != "playground"]
-        if "assets" not in relative.parts:
+        if not in_docs and "assets" not in relative.parts:
             continue
         for name in sorted(files):
+            if name in IDENTITY_FILES or in_docs and len(relative.parts) == 2 and name == "index.html":
+                continue
             path = base / name
             if path.suffix in (".br", ".gz") or any(Path(str(path) + ext).exists() for ext in (".br", ".gz")):
                 continue
@@ -47,6 +52,7 @@ def compact(public, limit=MAX_PAGES_BYTES):
         if directory.is_symlink() or directory.exists() and not directory.is_dir():
             raise ValueError(f"Shared asset directory is invalid: {directory}")
     groups = collections.defaultdict(list)
+    retained = set()
     for path in candidates(public):
         if path.is_symlink():
             target = Path(os.path.abspath(path.parent / path.readlink()))
@@ -54,6 +60,7 @@ def compact(public, limit=MAX_PAGES_BYTES):
                 raise ValueError(f"Documentation asset has an unexpected symlink: {path}")
             if target.name != digest(target) + path.suffix:
                 raise ValueError(f"Shared asset checksum mismatch: {path}")
+            retained.add(target)
             continue
         if not path.is_file():
             raise ValueError(f"Documentation asset is not a regular file: {path}")
@@ -68,6 +75,20 @@ def compact(public, limit=MAX_PAGES_BYTES):
             raise ValueError(f"Shared asset checksum mismatch: {target}")
         if len(paths) > 1 or target.exists():
             plans.append((target, paths))
+            retained.add(target)
+    orphaned = []
+    for path in public.rglob("*"):
+        if path.is_symlink():
+            target = Path(os.path.abspath(path.parent / path.readlink()))
+            if target.parent == store:
+                if target.is_symlink() or not target.is_file() or target.name != digest(target) + target.suffix:
+                    raise ValueError(f"Shared asset checksum mismatch: {path}")
+                retained.add(target)
+    for target in store.iterdir() if store.exists() else []:
+        if target.is_symlink() or not target.is_file() or target.name != digest(target) + target.suffix:
+            raise ValueError(f"Shared asset checksum mismatch: {target}")
+        if target not in retained:
+            orphaned.append(target)
     before = site_size(public)
     replaced = 0
     for target, paths in plans:
@@ -78,6 +99,8 @@ def compact(public, limit=MAX_PAGES_BYTES):
             path.unlink()
             path.symlink_to(os.path.relpath(target, path.parent))
             replaced += 1
+    for target in orphaned:
+        target.unlink()
     after = site_size(public)
     if after > limit:
         raise ValueError(f"Pages site is {after} bytes; limit is {limit}. Move retained assets to additional storage before publishing.")
