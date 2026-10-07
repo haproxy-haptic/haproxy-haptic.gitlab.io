@@ -40,3 +40,24 @@ Run the publisher tests with:
 ```bash
 make test
 ```
+
+## Pages size
+
+The publisher shares byte-identical documentation assets through relative links
+to checksum-named files under `shared/documentation-assets`. Original URLs and
+file contents remain unchanged. Playground bundles, release identities, and
+compressed asset families retain their original files. Every publication verifies
+existing shared assets and checks the unpacked site against GitLab.com's 1 GiB
+Pages limit before uploading it.
+
+Unique retained playground bundles still grow with each release. If the size
+check fails after compaction, provide additional asset storage before publishing;
+do not remove stable versions or disable their integrity checks.
+
+To repair a release's documentation after fixing the publisher, run an API
+pipeline on the reviewed, protected `pages-publisher-<commit>` tag with
+`PAGES_REPUBLISH_RELEASE=true`. Supply `DOC_VERSION` and the same
+`HAPTIC_RELEASE_COMMIT_SHA`, `HAPTIC_RELEASE_PIPELINE_ID`,
+and `HAPTIC_RELEASE_PLAYGROUND_JOB_NAME` values as the
+original release trigger, plus `PAGES_ARTIFACT_FALLBACK_REF`. This runs the
+publisher tests and retains the existing source and artifact identity checks.

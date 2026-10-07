@@ -8,7 +8,7 @@ trap 'rm -rf -- "$test_root"' EXIT
 
 publisher_root="$test_root/publisher"
 mkdir -p "$publisher_root/scripts"
-cp "$repo_root/scripts/"{deploy-docs.sh,semver-order.py,site_versions.py,apply-playground-ui-patches.py} "$publisher_root/scripts/"
+cp "$repo_root/scripts/"{deploy-docs.sh,semver-order.py,site_versions.py,apply-playground-ui-patches.py,compact_assets.py} "$publisher_root/scripts/"
 
 ordered=$(printf '%s\n' 0.9.0 0.10.0 1.0.0-alpha.2 1.0.0-alpha.10 1.0.0-rc.1 1.0.0 |
   "$repo_root/scripts/semver-order.py")
