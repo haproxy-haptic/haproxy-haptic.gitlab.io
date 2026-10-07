@@ -259,9 +259,9 @@ fi
 if [ "$VERSION" = dev ]; then
   landing_dir="$tmp_root/landing"
   mkdocs build -f "$MAIN_REPO/docs/landing/mkdocs.yml" -d "$landing_dir"
-  cp -a "$landing_dir/." "$PUBLIC_DIR/"
+  cp -a --remove-destination "$landing_dir/." "$PUBLIC_DIR/"
   mkdir -p "$PUBLIC_DIR/shared"
-  cp -a "$MAIN_REPO/docs/shared/." "$PUBLIC_DIR/shared/"
+  cp -a --remove-destination "$MAIN_REPO/docs/shared/." "$PUBLIC_DIR/shared/"
 else
   [ -s "$PUBLIC_DIR/index.html" ] || { echo "existing landing site is missing" >&2; exit 1; }
   [ -d "$PUBLIC_DIR/shared" ] || { echo "existing shared assets are missing" >&2; exit 1; }

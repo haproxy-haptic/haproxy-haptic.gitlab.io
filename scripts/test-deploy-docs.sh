@@ -42,6 +42,8 @@ while [ "$#" -gt 0 ]; do
 done
 [ -n "$destination" ]
 mkdir -p "$destination"
+mkdir -p "$destination/assets"
+printf '%2048s' "${FAKE_DOC_ASSET:-original}" > "$destination/assets/shared.js"
 printf '<html>fixture</html>\n' > "$destination/index.html"
 printf 'Sitemap: https://haproxy-haptic.org/docs/dev/sitemap.xml\n' > "$destination/robots.txt"
 FAKE
@@ -275,5 +277,15 @@ make_artifact dev 700 7000
 deploy "$public" dev 700 7000 >/dev/null
 [ "$patched_release" = "$(snapshot "$public/playground/0.2.0")" ]
 [ "$(jq -r .current "$public/playground/versions.json")" = 0.3.0 ]
+
+original_asset=$(sha256sum < "$public/docs/0.3.0/assets/shared.js")
+[ -L "$public/assets/shared.js" ]
+make_artifact dev 701 7001
+export FAKE_DOC_ASSET=changed
+deploy "$public" dev 701 7001 >/dev/null
+unset FAKE_DOC_ASSET
+[ "$original_asset" = "$(sha256sum < "$public/docs/0.3.0/assets/shared.js")" ]
+[ "$original_asset" != "$(sha256sum < "$public/assets/shared.js")" ]
+[ "$(sha256sum < "$public/assets/shared.js")" = "$(sha256sum < "$public/docs/dev/assets/shared.js")" ]
 
 echo "Pages provenance, aliases, preservation, retries, and UI corrections passed"

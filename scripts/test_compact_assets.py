@@ -117,6 +117,41 @@ class CompactAssetsTest(unittest.TestCase):
             compact(self.public)
         self.assertFalse(one.is_symlink())
 
+    def test_shares_documentation_pages_but_preserves_version_entry_and_identity_files(self):
+        protected = []
+        pages = []
+        for version in ("0.4.0", "0.4.1"):
+            pages.append(self.asset(f"docs/{version}/guide/index.html"))
+            for name in ("index.html", "release-identity.json", "legacy-documentation.json"):
+                protected.append(self.asset(f"docs/{version}/{name}"))
+        compact(self.public)
+        self.assertEqual(pages[0].resolve(), pages[1].resolve())
+        self.assertTrue(all(p.is_symlink() for p in pages))
+        self.assertTrue(all(not p.is_symlink() for p in protected))
+
+    def test_removes_only_verified_unreferenced_store_files(self):
+        root = self.asset("assets/file.js")
+        dev = self.asset("docs/dev/assets/file.js")
+        compact(self.public)
+        old = root.resolve()
+        root.unlink()
+        dev.unlink()
+        self.asset("assets/file.js", b"new" * 1000)
+        self.asset("docs/dev/assets/file.js", b"new" * 1000)
+        compact(self.public)
+        self.assertFalse(old.exists())
+        self.assertEqual(root.read_bytes(), b"new" * 1000)
+
+    def test_keeps_targets_referenced_by_files_no_longer_eligible_for_compaction(self):
+        root = self.asset("assets/file.js")
+        dev = self.asset("docs/dev/assets/file.js")
+        compact(self.public)
+        original = root.read_bytes()
+        self.asset("assets/file.js.gz")
+        dev.unlink()
+        compact(self.public)
+        self.assertEqual(root.read_bytes(), original)
+
 
 if __name__ == "__main__":
     unittest.main()
