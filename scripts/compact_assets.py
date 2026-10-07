@@ -81,6 +81,8 @@ def compact(public, limit=MAX_PAGES_BYTES):
         if path.is_symlink():
             target = Path(os.path.abspath(path.parent / path.readlink()))
             if target.parent == store:
+                if target.is_symlink() or not target.is_file() or target.name != digest(target) + target.suffix:
+                    raise ValueError(f"Shared asset checksum mismatch: {path}")
                 retained.add(target)
     for target in store.iterdir() if store.exists() else []:
         if target.is_symlink() or not target.is_file() or target.name != digest(target) + target.suffix:

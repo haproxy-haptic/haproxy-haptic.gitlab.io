@@ -152,6 +152,16 @@ class CompactAssetsTest(unittest.TestCase):
         compact(self.public)
         self.assertEqual(root.read_bytes(), original)
 
+    def test_rejects_missing_targets_even_when_a_compressed_sibling_is_added(self):
+        root = self.asset("assets/file.js")
+        dev = self.asset("docs/dev/assets/file.js")
+        compact(self.public)
+        self.asset("assets/file.js.gz")
+        dev.unlink()
+        root.resolve().unlink()
+        with self.assertRaisesRegex(ValueError, "checksum mismatch"):
+            compact(self.public)
+
 
 if __name__ == "__main__":
     unittest.main()
