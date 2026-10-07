@@ -23,7 +23,7 @@ test:
     - if: >-
         $CI_PIPELINE_SOURCE == "api" &&
         $CI_COMMIT_TAG =~ /^pages-publisher-[0-9a-f]{40}$/ &&
-        ($PLAYGROUND_UI_HOTFIX_VERSION || $PAGES_REFRESH_VERSIONS == "true")
+        ($PLAYGROUND_UI_HOTFIX_VERSION || $PAGES_REFRESH_VERSIONS == "true" || $PAGES_REPUBLISH_RELEASE == "true")
 
 pages:
   stage: deploy
@@ -41,6 +41,7 @@ pages:
           patch_args=(--require-version "$PLAYGROUND_UI_HOTFIX_VERSION")
         fi
         python3 scripts/apply-playground-ui-patches.py ./public "${patch_args[@]}"
+        python3 scripts/compact_assets.py ./public
         exit 0
       fi
     - VERSION="${DOC_VERSION:?DOC_VERSION is required}"
@@ -69,7 +70,7 @@ pages:
     - if: >-
         $CI_PIPELINE_SOURCE == "api" &&
         $CI_COMMIT_TAG =~ /^pages-publisher-[0-9a-f]{40}$/ &&
-        ($PLAYGROUND_UI_HOTFIX_VERSION || $PAGES_REFRESH_VERSIONS == "true")
+        ($PLAYGROUND_UI_HOTFIX_VERSION || $PAGES_REFRESH_VERSIONS == "true" || $PAGES_REPUBLISH_RELEASE == "true")
     - if: >-
         $CI_PIPELINE_SOURCE == "api" &&
         $CI_COMMIT_TAG =~ /^pages-publisher-[0-9a-f]{40}$/ &&

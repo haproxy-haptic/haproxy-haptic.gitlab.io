@@ -298,6 +298,7 @@ else
   fi
   python3 "$SCRIPT_DIR/site_versions.py" "$PUBLIC_DIR"
   python3 "$SCRIPT_DIR/apply-playground-ui-patches.py" "$PUBLIC_DIR"
+  python3 "$SCRIPT_DIR/compact_assets.py" "$PUBLIC_DIR"
 fi
 
 echo "Deployed $MODE docs $VERSION from $SOURCE_COMMIT (pipeline $SOURCE_PIPELINE, job $SOURCE_JOB)"
