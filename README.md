@@ -45,16 +45,37 @@ make test
 
 The publisher shares byte-identical documentation files through relative links
 to checksum-named files under `shared/documentation-assets`. Original URLs and
-file contents remain unchanged. Version entry pages, playground bundles, release identities, and
-compressed asset families retain their original files. Every publication verifies
+file contents remain unchanged. Version entry pages, release identities, and
+compressed files retain their original files. Every publication verifies
 existing shared files, removes unreferenced shared copies, and checks the unpacked
 site against GitLab.com's [1000 MiB Pages limit](https://gitlab.com/help/instance_configuration)
 before uploading it. Moving landing pages replace destination links rather than
 overwriting files retained by released documentation.
 
-Unique retained playground bundles still grow with each release. If the size
-check fails after compaction, provide additional asset storage before publishing;
-do not remove stable versions or disable their integrity checks.
+The latest two stable playgrounds, `dev`, and the newest prerelease keep their
+engines and compressed variants on Pages. Older engines and their compressed
+variants live in this public project's generic package registry, under
+`playground-engine/<sha256>/<filename>`. Their original URLs redirect to those
+immutable bytes. Keep these packages: released playgrounds depend on them.
+Current playgrounds retain negotiated compression. Older playgrounds download
+the uncompressed engine from package storage, roughly 90 MiB instead of 20 MiB.
+
+Before building a publication, the publisher restores each external engine and
+checks its size and SHA-256 digest against `shared/playground-engines.json`.
+Existing release and UI integrity checks then run on complete bundles. Before
+removing older engines from the Pages artifact, the publisher uploads missing
+packages and downloads every package to verify its contents and public access.
+All packages must pass before any engine is removed. Existing objects are never
+overwritten, and changed stable-release engines fail publication.
+
+The Pages job uses its `CI_JOB_TOKEN` for uploads; downloads are public and do
+not forward credentials through storage redirects. The package registry must
+remain enabled and public. `PAGES_STORE_PLAYGROUND=true` is set only on the
+publisher job; the test suite uses an in-memory registry.
+
+The 1000 MiB check still covers the final artifact. If retained bundles and
+documentation eventually reach that limit, expand storage again; do not remove
+stable versions or disable their integrity checks.
 
 To repair a release's documentation after fixing the publisher, run an API
 pipeline on the reviewed, protected `pages-publisher-<commit>` tag with
