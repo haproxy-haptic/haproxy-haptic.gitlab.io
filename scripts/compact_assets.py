@@ -113,6 +113,12 @@ def main():
     parser.add_argument("public", type=Path)
     args = parser.parse_args()
     try:
+        if os.environ.get("PAGES_STORE_PLAYGROUND") == "true":
+            from playground_storage import Registry, externalize
+
+            externalize(args.public, Registry(os.environ.get("CI_PROJECT_ID", ""), os.environ.get("CI_JOB_TOKEN", "")))
+        elif (args.public / "shared/playground-engines.json").exists():
+            raise ValueError("Enable PAGES_STORE_PLAYGROUND to verify external playground storage")
         compact(args.public)
     except (ValueError, OSError) as error:
         print(f"Pages publication refused: {error}", file=sys.stderr)

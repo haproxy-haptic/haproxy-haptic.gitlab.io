@@ -28,11 +28,17 @@ test:
 pages:
   stage: deploy
   image: ${PYTHON_DOCS_IMAGE}
+  variables:
+    PAGES_STORE_PLAYGROUND: "true"
   tags:
     - saas-linux-small-amd64
   resource_group: pages-publication
   script:
     - ./scripts/restore-pages-artifact.sh ./public
+    - |
+      if [ "${PAGES_LINEAGE_SEED_ONLY:-false}" != true ]; then
+        python3 scripts/playground_storage.py restore ./public
+      fi
     - |
       if [ -n "${PLAYGROUND_UI_HOTFIX_VERSION:-}" ] || [ "${PAGES_REFRESH_VERSIONS:-false}" = true ]; then
         python3 scripts/site_versions.py ./public
