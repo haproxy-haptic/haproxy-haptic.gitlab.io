@@ -1,10 +1,12 @@
 # haproxy-haptic.gitlab.io
 
-GitLab Pages site for [HAPTIC](https://gitlab.com/haproxy-haptic/haptic) (HAProxy Template Ingress Controller) documentation, published at [haproxy-haptic.org](https://haproxy-haptic.org).
+> **Retired.** [HAPTIC](https://github.com/haproxy-haptic/HAPTIC) publishes [haproxy-haptic.org](https://haproxy-haptic.org) from its own GitHub Pages workflow (`.github/workflows/pages.yml`). This repository keeps the GitLab Pages publisher for reference; it no longer runs, and https://haproxy-haptic.gitlab.io serves its last publication.
+
+GitLab Pages site for [HAPTIC](https://github.com/haproxy-haptic/HAPTIC) (HAProxy Template Ingress Controller) documentation, published at [haproxy-haptic.org](https://haproxy-haptic.org).
 
 ## Overview
 
-This repository hosts the CI pipeline that builds and publishes versioned MkDocs documentation for the HAPTIC project. The documentation source lives in the [main haptic repo](https://gitlab.com/haproxy-haptic/haptic); this repo is responsible only for building and serving it via GitLab Pages.
+This repository hosts the CI pipeline that builds and publishes versioned MkDocs documentation for the HAPTIC project. The documentation source lives in the [main haptic repo](https://github.com/haproxy-haptic/HAPTIC); this repo is responsible only for building and serving it via GitLab Pages.
 
 ## How it works
 
